@@ -18,11 +18,19 @@ wheels/
 # Secrets
 .env
 
-# Editor
+# Editor / AI
 .vscode/
 .idea/
+.cursor/
+.claude/
 *.swp
 *.swo
+
+# Local docs and notes
+CLAUDE.md
+docs/
+examples/
+knowledge/
 
 # OS
 .DS_Store
