@@ -12,30 +12,30 @@ from runweave.skill.tools import LoadSkillTool, ReadSkillResourceTool, RunSkillS
 
 @dataclass
 class SkillMeta:
-    """skill 的元信息，从 SKILL.md frontmatter 解析而来。"""
+    """Skill metadata parsed from SKILL.md frontmatter."""
 
     name: str
     description: str
-    path: Path  # skill 目录的绝对路径
+    path: Path  # Absolute path to the skill directory
 
 
 class SkillLoader:
-    """扫描 skills 目录，解析 SKILL.md，提供 skill 目录和 tools。"""
+    """Scan the skills directory, parse SKILL.md files, and provide skill catalog and tools."""
 
     def __init__(self, skills_dir: Path) -> None:
         self.skills_dir = skills_dir.resolve()
         self._skills: dict[str, SkillMeta] = {}
         self._scan()
 
-    # ── 公开方法 ──────────────────────────────────────────
+    # -- Public methods ------------------------------------------------
 
     def get_catalog(self) -> str:
-        """生成 skill 目录文本，用于注入 system prompt。"""
+        """Generate a skill catalog string for injection into the system prompt."""
         if not self._skills:
             return ""
         lines = [
-            "## 可用 Skills",
-            "当任务匹配以下 skill 时，请调用 load_skill(skill_name) 加载详细指令后再执行。",
+            "## Available Skills",
+            "When a task matches one of the skills below, call load_skill(skill_name) to load detailed instructions before proceeding.",
             "",
         ]
         for meta in self._skills.values():
@@ -43,7 +43,7 @@ class SkillLoader:
         return "\n".join(lines)
 
     def get_tools(self) -> list[Tool]:
-        """返回 skill 相关的 Tool 实例。"""
+        """Return skill-related Tool instances."""
         return [
             self.load_skill_tool,
             ReadSkillResourceTool(self),
@@ -52,44 +52,44 @@ class SkillLoader:
 
     @property
     def load_skill_tool(self) -> LoadSkillTool:
-        """返回 LoadSkillTool 单例，用于追踪 skill 加载记录。"""
+        """Return the LoadSkillTool singleton for tracking skill load history."""
         if not hasattr(self, "_load_skill_tool"):
             self._load_skill_tool = LoadSkillTool(self)
         return self._load_skill_tool
 
     def load_skill(self, name: str) -> str:
-        """读取指定 skill 的 SKILL.md 正文（不含 frontmatter）。"""
+        """Read the body of the specified skill's SKILL.md (without frontmatter)."""
         meta = self._skills.get(name)
         if meta is None:
-            return f"错误：未找到名为 '{name}' 的 skill。可用 skills: {', '.join(self._skills)}"
+            return f"Error: skill '{name}' not found. Available skills: {', '.join(self._skills)}"
         content = (meta.path / "SKILL.md").read_text(encoding="utf-8")
         return self._strip_frontmatter(content)
 
     def read_resource(self, skill_name: str, path: str) -> str:
-        """读取 skill 目录下的文件，带路径安全校验。"""
+        """Read a file from the skill directory with path safety checks."""
         meta = self._skills.get(skill_name)
         if meta is None:
-            return f"错误：未找到名为 '{skill_name}' 的 skill。"
-        # 路径安全：解析后必须在 skill 目录内
+            return f"Error: skill '{skill_name}' not found."
+        # Path safety: resolved path must stay within the skill directory
         target = (meta.path / path).resolve()
         if not str(target).startswith(str(meta.path)):
-            return "错误：路径越界，不允许访问 skill 目录之外的文件。"
+            return "Error: path traversal detected, access outside the skill directory is not allowed."
         if not target.is_file():
-            return f"错误：文件不存在: {path}"
+            return f"Error: file not found: {path}"
         return target.read_text(encoding="utf-8")
 
     def run_script(self, skill_name: str, script: str, args: str) -> str:
-        """执行 skill 目录下 scripts/ 中的脚本，带安全校验和超时。"""
+        """Execute a script from the skill's scripts/ directory with safety checks and timeout."""
         meta = self._skills.get(skill_name)
         if meta is None:
-            return f"错误：未找到名为 '{skill_name}' 的 skill。"
-        # 脚本必须在 scripts/ 子目录内
+            return f"Error: skill '{skill_name}' not found."
+        # Script must be inside the scripts/ subdirectory
         script_path = (meta.path / "scripts" / script).resolve()
         if not str(script_path).startswith(str(meta.path / "scripts")):
-            return "错误：脚本路径越界，只允许执行 scripts/ 目录下的文件。"
+            return "Error: script path traversal detected, only scripts/ directory files are allowed."
         if not script_path.is_file():
-            return f"错误：脚本不存在: scripts/{script}"
-        # 构建命令
+            return f"Error: script not found: scripts/{script}"
+        # Build command
         cmd = [str(script_path)]
         if args and args.strip():
             cmd.extend(args.strip().split())
@@ -107,12 +107,12 @@ class SkillLoader:
                 output += f"\n[exit code: {result.returncode}]"
             return output
         except subprocess.TimeoutExpired:
-            return "错误：脚本执行超时（30 秒限制）。"
+            return "Error: script execution timed out (30 second limit)."
 
-    # ── 内部方法 ──────────────────────────────────────────
+    # -- Internal methods ----------------------------------------------
 
     def _scan(self) -> None:
-        """扫描 skills_dir 下所有包含 SKILL.md 的子目录。"""
+        """Scan all subdirectories under skills_dir that contain a SKILL.md."""
         if not self.skills_dir.is_dir():
             return
         for skill_md in self.skills_dir.glob("*/SKILL.md"):
@@ -128,7 +128,7 @@ class SkillLoader:
 
     @staticmethod
     def _parse_frontmatter(content: str) -> dict[str, str] | None:
-        """解析 YAML frontmatter（简单实现，不依赖 PyYAML）。"""
+        """Parse YAML frontmatter (simple implementation, no PyYAML dependency)."""
         lines = content.split("\n")
         if not lines or lines[0].strip() != "---":
             return None
@@ -146,7 +146,7 @@ class SkillLoader:
 
     @staticmethod
     def _strip_frontmatter(content: str) -> str:
-        """移除 SKILL.md 开头的 YAML frontmatter，返回正文。"""
+        """Remove the YAML frontmatter from the beginning of SKILL.md, returning the body."""
         lines = content.split("\n")
         if not lines or lines[0].strip() != "---":
             return content

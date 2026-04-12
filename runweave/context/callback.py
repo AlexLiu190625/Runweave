@@ -7,11 +7,11 @@ from runweave.context.step_compressor import StepCompressor
 
 
 def make_context_callback(budget: ContextBudget) -> Callable:
-    """创建 smolagents step 回调，超阈值时压缩 memory。
+    """Create a smolagents step callback that compresses memory when above threshold.
 
-    返回的回调通过 CodeAgent(step_callbacks={ActionStep: callback})
-    注册，每步结束后触发。回调在 step append 到 memory 之前执行，
-    所以压缩立即生效于下一步。
+    The returned callback is registered via CodeAgent(step_callbacks={ActionStep: callback})
+    and fires after each step completes. The callback executes before the step is
+    appended to memory, so compression takes effect immediately for the next step.
     """
     compressor = StepCompressor(budget)
 

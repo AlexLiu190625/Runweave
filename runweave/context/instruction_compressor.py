@@ -7,13 +7,13 @@ from runweave.context.counter import TokenCounter
 
 
 class InstructionCompressor:
-    """将 cross-run 注入的 instructions 压缩到 token 预算以内。
+    """Compress cross-run injected instructions to fit within the token budget.
 
-    压缩策略只动 history_md（优先级最低的部分）：
-    1. 去掉 Recent Runs 的 step 详情，只保留标题行
-    2. 去掉 Recent Runs 整节，只留 Run Log 表
-    3. Run Log 表只保留最后 10 行
-    4. 硬截断 history_md 到预算剩余空间
+    Compression strategy only modifies history_md (lowest priority part):
+    1. Strip step details from Recent Runs, keeping only header lines
+    2. Remove the entire Recent Runs section, keeping only the Run Log table
+    3. Keep only the last 10 rows of the Run Log table
+    4. Hard-truncate history_md to remaining budget space
     """
 
     def __init__(self, budget: ContextBudget) -> None:
@@ -27,10 +27,10 @@ class InstructionCompressor:
         history_md: str | None,
         thread_summary: str | None,
     ) -> str | None:
-        """组装并压缩 instructions，保证不超过 instruction_budget。"""
+        """Assemble and compress instructions to stay within instruction_budget."""
         limit = self.budget.instruction_budget()
 
-        # 不可压缩的部分（永不裁剪）
+        # Non-compressible parts (never trimmed)
         fixed_parts: list[str] = []
         if user_instructions:
             fixed_parts.append(user_instructions)
@@ -47,10 +47,10 @@ class InstructionCompressor:
 
         remaining = limit - fixed_tokens
         if remaining <= 0:
-            # 固定部分已超预算，丢弃 history_md
+            # Fixed parts already exceed budget, discard history_md
             return fixed_text or None
 
-        # 逐级压缩 history_md
+        # Progressively compress history_md
         compressed = self._compress_history(history_md, remaining)
 
         parts = []
@@ -61,33 +61,33 @@ class InstructionCompressor:
         return "\n\n".join(parts) if parts else None
 
     def _compress_history(self, history_md: str, token_limit: int) -> str:
-        """逐级压缩 HISTORY.md 直到满足 token_limit。"""
-        # Level 0: 原文
+        """Progressively compress HISTORY.md until it fits within token_limit."""
+        # Level 0: original text
         if self.counter.estimate(history_md) <= token_limit:
             return history_md
 
-        # Level 1: 去掉 Recent Runs 的 step 详情（代码块和引用行）
+        # Level 1: strip step details from Recent Runs (code blocks and quote lines)
         stripped = self._strip_step_details(history_md)
         if self.counter.estimate(stripped) <= token_limit:
             return stripped
 
-        # Level 2: 去掉 Recent Runs 整节
+        # Level 2: remove the entire Recent Runs section
         run_log_only = self._keep_run_log_only(history_md)
         if self.counter.estimate(run_log_only) <= token_limit:
             return run_log_only
 
-        # Level 3: Run Log 表只保留最后 10 行
+        # Level 3: keep only the last 10 rows of the Run Log table
         truncated = self._truncate_run_log(run_log_only, max_rows=10)
         if self.counter.estimate(truncated) <= token_limit:
             return truncated
 
-        # Level 4: 硬截断
+        # Level 4: hard truncate
         char_limit = int(token_limit * TokenCounter.CHARS_PER_TOKEN)
         return truncated[:char_limit]
 
     @staticmethod
     def _strip_step_details(history_md: str) -> str:
-        """移除 Recent Runs 中的代码块和引用行，只保留标题。"""
+        """Remove code blocks and quote lines from Recent Runs, keeping only headers."""
         lines = history_md.split("\n")
         result: list[str] = []
         in_recent = False
@@ -99,7 +99,7 @@ class InstructionCompressor:
             if not in_recent:
                 result.append(line)
                 continue
-            # 在 Recent Runs 中：保留标题和 Skills 行，跳过其余
+            # Within Recent Runs: keep headers and Skills lines, skip the rest
             if line.startswith("### Run") or line.startswith("Skills:"):
                 result.append(line)
             elif line.startswith("**Output:**"):
@@ -111,7 +111,7 @@ class InstructionCompressor:
 
     @staticmethod
     def _keep_run_log_only(history_md: str) -> str:
-        """只保留 # Thread History 和 ## Run Log，丢弃 ## Recent Runs。"""
+        """Keep only # Thread History and ## Run Log, discard ## Recent Runs."""
         idx = history_md.find("## Recent Runs")
         if idx == -1:
             return history_md
@@ -119,9 +119,9 @@ class InstructionCompressor:
 
     @staticmethod
     def _truncate_run_log(history_md: str, max_rows: int = 10) -> str:
-        """Run Log 表只保留最后 max_rows 行数据。"""
+        """Keep only the last max_rows data rows of the Run Log table."""
         lines = history_md.split("\n")
-        # 找到表格数据行（以 | 开头，排除表头和分隔线）
+        # Find table data rows (starting with |, excluding header and separator)
         header_end = -1
         data_lines: list[int] = []
         for i, line in enumerate(lines):
@@ -133,6 +133,6 @@ class InstructionCompressor:
         if len(data_lines) <= max_rows:
             return history_md
 
-        # 只保留最后 max_rows 行
+        # Keep only the last max_rows rows
         remove = set(data_lines[:-max_rows])
         return "\n".join(line for i, line in enumerate(lines) if i not in remove)

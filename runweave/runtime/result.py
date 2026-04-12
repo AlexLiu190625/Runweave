@@ -6,21 +6,21 @@ from typing import Any
 
 @dataclass
 class RunResult:
-    """Runtime.run() 的返回值。"""
+    """Return value of Runtime.run()."""
 
-    # agent 的最终输出
+    # Final output from the agent
     output: Any
-    # 所属 thread 的 ID
+    # ID of the owning thread
     thread_id: str
-    # 执行状态："success" 或 "max_steps_error"
+    # Execution state: "success" or "max_steps_error"
     state: str
-    # 本次 run 执行的步数
+    # Number of steps executed in this run
     step_count: int
-    # token 使用统计（可能为 None）
+    # Token usage statistics (may be None)
     token_usage: dict | None
-    # 耗时统计（可能为 None）
+    # Timing statistics (may be None)
     timing: dict | None
-    # thread 摘要
+    # Thread summary
     summary: str | None = None
-    # 本次 run 加载的 skill 列表
+    # Skills loaded during this run
     skills_used: list[str] = field(default_factory=list)

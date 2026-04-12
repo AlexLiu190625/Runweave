@@ -6,19 +6,19 @@ from pathlib import Path
 
 @dataclass
 class Thread:
-    """一个独立的工作单元，拥有自己的 workspace 和 memory 归档。"""
+    """An independent unit of work with its own workspace and memory archive."""
 
-    # 唯一标识
+    # Unique identifier
     id: str
-    # 创建时间（ISO 格式）
+    # Creation time (ISO format)
     created_at: str
-    # workspace 目录，agent 在此读写文件
+    # Workspace directory where the agent reads and writes files
     workspace_dir: Path
-    # memory 序列化文件路径
+    # Path to the serialized memory file
     memory_path: Path
-    # summary 文件路径
+    # Path to the summary file
     summary_path: Path
-    # HISTORY.md 路径（结构化 run 历史）
+    # Path to HISTORY.md (structured run history)
     history_path: Path
-    # runs/ 目录路径（每轮详细记录）
+    # Path to the runs/ directory (per-run detailed records)
     runs_dir: Path

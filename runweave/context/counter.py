@@ -4,19 +4,20 @@ import math
 
 
 class TokenCounter:
-    """基于字符比例的 token 数估算器。
+    """Character-ratio based token count estimator.
 
-    用于 cross-run 场景（估算 instructions 大小）。
-    intra-run 场景直接使用 smolagents 返回的实际 token 数。
+    Used for cross-run scenarios (estimating instruction sizes).
+    For intra-run scenarios, use the actual token counts returned
+    by smolagents.
     """
 
-    # 保守估算：英文约 4 chars/token，中文约 2 chars/token，
-    # 取 3.5 作为混合语言的折中值
+    # Conservative estimate: ~4 chars/token for English, ~2 for CJK,
+    # using 3.5 as a compromise for mixed-language content
     CHARS_PER_TOKEN: float = 3.5
 
     @staticmethod
     def estimate(text: str | None) -> int:
-        """估算文本的 token 数。"""
+        """Estimate the token count for a given text."""
         if not text:
             return 0
         return math.ceil(len(text) / TokenCounter.CHARS_PER_TOKEN)

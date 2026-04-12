@@ -9,11 +9,12 @@ if TYPE_CHECKING:
 
 
 def save_memory(memory: AgentMemory, path: Path) -> None:
-    """将 AgentMemory 序列化到 JSON 文件。
+    """Serialize AgentMemory to a JSON file.
 
-    使用 get_succinct_steps() 获取精简格式（排除 model_input_messages），
-    序列化由 smolagents 内部的 .dict() 方法完成。
-    保存的数据供用户查阅历史，不会在下次 run 时回灌到 agent。
+    Uses get_succinct_steps() for a compact format (excludes
+    model_input_messages). Serialization is handled by smolagents'
+    internal .dict() method. The saved data is for user inspection
+    only and is never fed back into the agent on subsequent runs.
     """
     steps = memory.get_succinct_steps()
     path.write_text(
@@ -22,10 +23,10 @@ def save_memory(memory: AgentMemory, path: Path) -> None:
 
 
 def load_memory(path: Path) -> list[dict]:
-    """从 JSON 文件加载 memory 记录。
+    """Load memory records from a JSON file.
 
-    返回原始 dict 列表，仅供查阅，不回灌到 agent 上下文。
-    文件不存在时返回空列表。
+    Returns raw dict list for inspection only; not fed back into
+    agent context. Returns an empty list if the file does not exist.
     """
     if not path.is_file():
         return []

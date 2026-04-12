@@ -23,15 +23,15 @@ from runweave.runtime.thread_store import ThreadStore
 from runweave.skill.loader import SkillLoader
 from runweave.tool.loader import ToolLoader
 
-# 默认数据目录
+# Default data directory
 DEFAULT_BASE_DIR = Path.home() / ".runweave"
 
 
 class Runtime:
-    """Runweave 的顶层入口。
+    """Top-level entry point for Runweave.
 
-    将 smolagents CodeAgent 包装在持久化 thread 中：
-    每次 run 都有独立的 workspace 和 memory 归档。
+    Wraps a smolagents CodeAgent in a persistent thread: each run gets
+    its own workspace and memory archive.
     """
 
     def __init__(
@@ -60,29 +60,29 @@ class Runtime:
         thread_id: str | None = None,
         tool_names: list[str] | None = None,
     ) -> RunResult:
-        """在指定 thread 中执行任务，返回 RunResult。
+        """Execute a task within the specified thread and return a RunResult.
 
-        thread_id 为 None 时自动创建新 thread；
-        传入已有 thread_id 可在同一 workspace 中继续工作。
+        When thread_id is None a new thread is created automatically;
+        passing an existing thread_id continues work in the same workspace.
         """
-        # 1. 加载或创建 thread
+        # 1. Load or create the thread
         if thread_id and self.store.exists(thread_id):
             thread = self.store.load(thread_id)
         else:
             thread = self.store.create(thread_id)
 
-        # 2. 构建 WorkspaceExecutor
+        # 2. Build the WorkspaceExecutor
         executor = WorkspaceExecutor(
             workspace_dir=thread.workspace_dir,
             additional_authorized_imports=self.additional_authorized_imports,
         )
 
-        # 3. 收集并压缩 instructions
+        # 3. Collect and compress instructions
         parts = self._collect_instruction_parts(thread)
         compressor = InstructionCompressor(self.context_budget)
         instructions = compressor.compress(**parts)
 
-        # 4. 合并 tools（用户传入的 + custom tools + skill tools）
+        # 4. Merge tools (user-provided + custom tools + skill tools)
         tools = list(self.tools)
         tools_used: list[str] = []
         if self.tool_loader:
@@ -92,10 +92,10 @@ class Runtime:
         if self.skill_loader:
             tools.extend(self.skill_loader.get_tools())
 
-        # 5. 注册 ReadRunDetailTool（按需加载历史 run 详情）
+        # 5. Register ReadRunDetailTool (load historical run details on demand)
         tools.append(ReadRunDetailTool(thread.runs_dir))
 
-        # 6. 构建 CodeAgent — smolagents 处理 agent loop 的一切
+        # 6. Build CodeAgent — smolagents handles the agent loop
         context_callback = make_context_callback(self.context_budget)
         agent = CodeAgent(
             model=self.model,
@@ -105,18 +105,18 @@ class Runtime:
             step_callbacks={ActionStep: context_callback},
         )
 
-        # 7. 执行任务
+        # 7. Execute the task
         smolagents_result = agent.run(task, return_full_result=True)
 
-        # 8. 提取 skills_used
+        # 8. Extract skills_used
         skills_used: list[str] = []
         if self.skill_loader:
             skills_used = self.skill_loader.load_skill_tool.get_loaded_and_reset()
 
-        # 9. 持久化 memory 到磁盘
+        # 9. Persist memory to disk
         save_memory(agent.memory, thread.memory_path)
 
-        # 10. 写入 run 记录 + 重新生成 HISTORY.md
+        # 10. Write run record and regenerate HISTORY.md
         history_writer = HistoryWriter(thread.runs_dir, thread.history_path)
         run_record = extract_run_record(
             run_number=history_writer.next_run_number(),
@@ -130,7 +130,7 @@ class Runtime:
         history_writer.save_run(run_record)
         history_writer.generate_history()
 
-        # 11. 生成/更新 summary
+        # 11. Generate/update summary
         previous_summary = (
             thread.summary_path.read_text().strip()
             if thread.summary_path.is_file()
@@ -144,7 +144,7 @@ class Runtime:
         )
         thread.summary_path.write_text(summary)
 
-        # 12. 组装 RunResult
+        # 12. Assemble RunResult
         return RunResult(
             output=smolagents_result.output,
             thread_id=thread.id,
@@ -165,7 +165,7 @@ class Runtime:
         )
 
     def _collect_instruction_parts(self, thread: Thread) -> dict[str, str | None]:
-        """收集 instructions 的各组成部分，供 InstructionCompressor 压缩。"""
+        """Collect instruction components for InstructionCompressor."""
         skill_catalog = None
         if self.skill_loader:
             catalog = self.skill_loader.get_catalog()

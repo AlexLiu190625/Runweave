@@ -5,7 +5,7 @@ from runweave.context.instruction_compressor import InstructionCompressor
 
 
 def _make_compressor(available_tokens: int = 100_000) -> InstructionCompressor:
-    """创建指定可用 token 数的 compressor。"""
+    """Create a compressor with the specified available token count."""
     # buffer_tokens = context_window - available_tokens
     budget = ContextBudget("claude-sonnet-4", buffer_tokens=200_000 - available_tokens)
     return InstructionCompressor(budget)
@@ -32,7 +32,7 @@ def test_no_parts_returns_none():
 
 
 def test_user_instructions_never_cut():
-    """即使预算极小，user_instructions 也不被裁剪。"""
+    """user_instructions should never be trimmed, even with a very small budget."""
     comp = _make_compressor(available_tokens=50)
     result = comp.compress(
         user_instructions="Critical instruction that must survive.",
@@ -44,8 +44,8 @@ def test_user_instructions_never_cut():
 
 
 def test_history_stripped_when_over_budget():
-    """预算不足时 history_md 应被压缩。"""
-    # 很小的预算
+    """history_md should be compressed when budget is insufficient."""
+    # Very small budget
     comp = _make_compressor(available_tokens=200)
     big_history = (
         "# Thread History\n\n"
@@ -66,14 +66,14 @@ def test_history_stripped_when_over_budget():
         history_md=big_history,
         thread_summary=None,
     )
-    # 应该包含 user_instructions
+    # Should contain user_instructions
     assert "Be helpful" in result
-    # history 应该被压缩（至少部分保留或完全丢弃）
+    # History should be compressed (at least partially retained or fully discarded)
     assert len(result) < len(big_history) + 50
 
 
 def test_strip_step_details():
-    """_strip_step_details 应移除代码块和引用行。"""
+    """_strip_step_details should remove code blocks and quote lines."""
     comp = _make_compressor()
     history = (
         "# Thread History\n\n"
@@ -109,7 +109,7 @@ def test_truncate_run_log():
     history = "\n".join(lines)
 
     result = InstructionCompressor._truncate_run_log(history, max_rows=5)
-    # 应只保留最后 5 行数据
+    # Should keep only the last 5 data rows
     assert "| 20 |" in result
     assert "| 16 |" in result
     assert "| 15 |" not in result

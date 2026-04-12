@@ -10,14 +10,14 @@ from runweave.runtime.run_record import RunRecord
 if TYPE_CHECKING:
     pass
 
-# 每步 code 在 HISTORY.md 中的最大行数
+# Max lines of code per step shown in HISTORY.md
 _MAX_CODE_LINES = 10
-# Recent Runs 中保留的最近 run 数量
+# Number of recent runs to include in the Recent Runs section
 _DEFAULT_RECENT_COUNT = 3
 
 
 class HistoryWriter:
-    """管理 per-run 记录文件和 HISTORY.md 索引。"""
+    """Manage per-run record files and the HISTORY.md index."""
 
     def __init__(
         self,
@@ -30,7 +30,7 @@ class HistoryWriter:
         self.recent_count = recent_count
 
     def next_run_number(self) -> int:
-        """根据 runs/ 下已有文件计算下一个 run 编号。"""
+        """Compute the next run number based on existing files in runs/."""
         existing = list(self.runs_dir.glob("run-*.json"))
         if not existing:
             return 1
@@ -45,7 +45,7 @@ class HistoryWriter:
         return max(numbers) + 1 if numbers else 1
 
     def save_run(self, record: RunRecord) -> None:
-        """写入 runs/run-NNN.json 和 runs/run-NNN.md。"""
+        """Write runs/run-NNN.json and runs/run-NNN.md."""
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         prefix = f"run-{record.run_number:03d}"
         (self.runs_dir / f"{prefix}.json").write_text(
@@ -56,7 +56,7 @@ class HistoryWriter:
         )
 
     def generate_history(self) -> None:
-        """从 runs/ 目录重新生成 HISTORY.md。"""
+        """Regenerate HISTORY.md from the runs/ directory."""
         records = self._load_all_records()
         if not records:
             return
@@ -65,7 +65,7 @@ class HistoryWriter:
         lines.append("# Thread History")
         lines.append("")
 
-        # Run Log 表
+        # Run Log table
         lines.append("## Run Log")
         lines.append("| # | Time | Task | State | Skills | Tools |")
         lines.append("|---|------|------|-------|--------|-------|")
@@ -79,7 +79,7 @@ class HistoryWriter:
             )
         lines.append("")
 
-        # Recent Runs 详情
+        # Recent Runs details
         recent = records[-self.recent_count :]
         lines.append("## Recent Runs")
         lines.append("")
@@ -104,7 +104,7 @@ class HistoryWriter:
                         )
                     lines.append("```")
                 if step.output:
-                    # 截断过长的 output
+                    # Truncate overly long output
                     output_text = step.output[:500]
                     if len(step.output) > 500:
                         output_text += "..."
@@ -116,7 +116,7 @@ class HistoryWriter:
         self.history_path.write_text("\n".join(lines), encoding="utf-8")
 
     def _load_all_records(self) -> list[RunRecord]:
-        """按 run_number 排序加载所有 RunRecord。"""
+        """Load all RunRecords sorted by run_number."""
         records: list[RunRecord] = []
         for json_path in sorted(self.runs_dir.glob("run-*.json")):
             try:
@@ -130,17 +130,18 @@ class HistoryWriter:
 
 
 class ReadRunDetailTool(Tool):
-    """按需读取指定 run 编号的详细执行记录。"""
+    """Load the detailed execution record for a given run number on demand."""
 
     name = "read_run_detail"
     description = (
-        "读取指定 run 编号的详细执行记录，包含完整的代码和输出。"
-        "当你需要回顾较早 run 的详细信息时使用。"
+        "Read the detailed execution record for a specified run number, "
+        "including full code and output. Use this when you need to review "
+        "the details of an earlier run."
     )
     inputs = {
         "run_number": {
             "type": "integer",
-            "description": "run 编号（来自 Thread History 的 Run Log）",
+            "description": "Run number (from the Run Log in Thread History)",
         },
     }
     output_type = "string"
@@ -152,5 +153,5 @@ class ReadRunDetailTool(Tool):
     def forward(self, run_number: int) -> str:
         md_path = self.runs_dir / f"run-{run_number:03d}.md"
         if not md_path.is_file():
-            return f"错误：未找到 Run {run_number} 的记录。"
+            return f"Error: no record found for Run {run_number}."
         return md_path.read_text(encoding="utf-8")

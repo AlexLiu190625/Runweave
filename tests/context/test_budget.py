@@ -9,13 +9,13 @@ def test_known_model_exact():
 
 
 def test_known_model_substring():
-    """model_id 包含已知 key 时应匹配。"""
+    """model_id containing a known key should match."""
     b = ContextBudget("claude-sonnet-4-20250514")
     assert b.context_window == 200_000
 
 
 def test_longest_key_wins():
-    """gpt-4.1-mini 应匹配 'gpt-4.1-mini' 而非 'gpt-4.1'。"""
+    """gpt-4.1-mini should match 'gpt-4.1-mini' rather than 'gpt-4.1'."""
     b = ContextBudget("gpt-4.1-mini-2025-04-14")
     assert b.context_window == 1_047_576
 
@@ -24,7 +24,7 @@ def test_longest_key_wins():
 
 
 def test_frontier_models():
-    """验证 2026 前沿模型的窗口大小。"""
+    """Verify context window sizes for 2026 frontier models."""
     assert ContextBudget("gpt-5.4").context_window == 1_050_000
     assert ContextBudget("claude-opus-4-6").context_window == 1_000_000
     assert ContextBudget("claude-sonnet-4-6").context_window == 1_000_000
@@ -48,7 +48,7 @@ def test_budget_partition():
 
 
 def test_budget_math_identity():
-    """instruction_budget + step_budget == available。"""
+    """instruction_budget + step_budget should equal available."""
     b = ContextBudget("gpt-4.1")
     assert b.instruction_budget() + b.step_budget() == b.available
 

@@ -7,20 +7,20 @@ from runweave.context.budget import ContextBudget
 if TYPE_CHECKING:
     from smolagents.memory import MemoryStep
 
-# 压缩后 observations 的最大字符数
+# Max characters for observations after compression
 _MAX_OBS_LEN = 200
-# 保持完整细节的最近步数
+# Number of recent steps to keep with full detail
 _KEEP_RECENT = 3
-# 触发压缩的阈值（占 step_budget 的比例）
+# Compression trigger threshold (fraction of step_budget)
 _TRIGGER_RATIO = 0.8
 
 
 class StepCompressor:
-    """Intra-run 步骤压缩器，通过修改旧步骤字段来缩减 context。
+    """Intra-run step compressor that reduces context by modifying old step fields.
 
-    分三级渐进压缩（只动 ActionStep，不动 TaskStep/SystemPromptStep）：
-    - Tier 1: observations 截断到 _MAX_OBS_LEN 字符
-    - Tier 2: observations 清空，保留 code_action
+    Uses three progressive compression tiers (only ActionStep, not TaskStep/SystemPromptStep):
+    - Tier 1: truncate observations to _MAX_OBS_LEN characters
+    - Tier 2: clear observations, keep code_action
     - Tier 3: observations = "[compressed]", code_action = None
     """
 
@@ -34,19 +34,20 @@ class StepCompressor:
         self._threshold = int(budget.step_budget() * _TRIGGER_RATIO)
 
     def compress_if_needed(self, steps: list[MemoryStep]) -> None:
-        """检查最近步骤的 input_tokens，超阈值则就地压缩旧步骤。
+        """Check the latest step's input_tokens and compress old steps if above threshold.
 
-        使用最近 ActionStep 的 token_usage.input_tokens 作为实际 context 大小。
-        回调触发时当前步尚未 append 到 steps，所以 steps[-1] 是上一步。
+        Uses the most recent ActionStep's token_usage.input_tokens as the actual
+        context size. The callback fires before the current step is appended to
+        steps, so steps[-1] is the previous step.
         """
         from smolagents.memory import ActionStep
 
-        # 找到最近一个有 token_usage 的 ActionStep
+        # Find the most recent ActionStep with token_usage
         last_input_tokens = self._get_last_input_tokens(steps)
         if last_input_tokens is None or last_input_tokens < self._threshold:
             return
 
-        # 收集可压缩的 ActionStep 索引（排除最近 keep_recent 个）
+        # Collect compressible ActionStep indices (excluding the most recent keep_recent)
         action_indices = [
             i for i, s in enumerate(steps) if isinstance(s, ActionStep)
         ]
@@ -55,14 +56,14 @@ class StepCompressor:
 
         compressible = action_indices[: -self.keep_recent]
 
-        # 逐级压缩：先全部 Tier 1，不够再 Tier 2，最后 Tier 3
+        # Progressive compression: apply Tier 1 to all, then Tier 2 if needed, then Tier 3
         for tier in range(1, 4):
             for idx in compressible:
                 self._apply_tier(steps[idx], tier)
-            # 检查效果：重新估算（粗略，用字段长度）
-            # 由于我们无法精确知道下次 input_tokens，
-            # 这里一次性应用当前 tier 到所有可压缩步骤
-            # 实际效果会在下一步的 token_usage 中体现
+            # Check whether compression is sufficient (rough estimate based on field lengths).
+            # Since we can't know the exact next input_tokens, we apply the current tier
+            # to all compressible steps at once. The actual effect will be reflected in
+            # the next step's token_usage.
             break_after = self._estimate_reduction_sufficient(
                 steps, last_input_tokens
             )
@@ -70,29 +71,29 @@ class StepCompressor:
                 break
 
     def _apply_tier(self, step: MemoryStep, tier: int) -> None:
-        """对单个步骤应用指定级别的压缩。"""
+        """Apply the specified compression tier to a single step."""
         from smolagents.memory import ActionStep
 
         if not isinstance(step, ActionStep):
             return
 
         if tier == 1:
-            # 截断 observations
+            # Truncate observations
             if step.observations and len(step.observations) > _MAX_OBS_LEN:
                 step.observations = step.observations[:_MAX_OBS_LEN] + "..."
         elif tier == 2:
-            # 清空 observations，保留 code
+            # Clear observations, keep code
             step.observations = None
             step.model_output = None
         elif tier == 3:
-            # 全部清空
+            # Clear everything
             step.observations = "[compressed]"
             step.code_action = None
             step.model_output = None
 
     @staticmethod
     def _get_last_input_tokens(steps: list[MemoryStep]) -> int | None:
-        """从 steps 中找到最近一个有 token_usage 的步骤的 input_tokens。"""
+        """Find the input_tokens of the most recent step with token_usage."""
         from smolagents.memory import ActionStep
 
         for step in reversed(steps):
@@ -105,10 +106,10 @@ class StepCompressor:
         steps: list[MemoryStep],
         original_tokens: int,
     ) -> bool:
-        """粗略估算压缩是否足够（基于文本长度变化）。
+        """Roughly estimate whether compression is sufficient based on text length changes.
 
-        这是一个近似判断：如果总文本长度减少了 30% 以上，
-        认为压缩已经足够，不需要继续到更高 tier。
+        This is an approximate check: if the total text length has decreased by
+        more than 30%, we consider compression sufficient and skip higher tiers.
         """
         from smolagents.memory import ActionStep
 
@@ -122,6 +123,6 @@ class StepCompressor:
                 if step.model_output and isinstance(step.model_output, str):
                     total_chars += len(step.model_output)
 
-        # 粗略估算：如果剩余文本对应的 token 数在阈值以下
+        # Rough estimate: check if remaining text tokens are below threshold
         estimated_tokens = total_chars / 3.5
         return estimated_tokens < original_tokens * 0.7

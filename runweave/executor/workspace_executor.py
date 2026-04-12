@@ -8,7 +8,7 @@ from smolagents import LocalPythonExecutor
 
 
 class WorkspaceExecutor(LocalPythonExecutor):
-    """在指定 workspace 目录下执行代码的执行器。"""
+    """Executor that runs code inside a designated workspace directory."""
 
     def __init__(
         self,
@@ -16,7 +16,7 @@ class WorkspaceExecutor(LocalPythonExecutor):
         additional_authorized_imports: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
-        # 确保 workspace 目录存在
+        # Ensure the workspace directory exists
         self.workspace_dir = Path(workspace_dir)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         super().__init__(
@@ -25,7 +25,7 @@ class WorkspaceExecutor(LocalPythonExecutor):
         )
 
     def __call__(self, code_action: str) -> Any:
-        # 切换到 workspace 目录后执行，结束后恢复原目录
+        # Switch to workspace directory before execution, restore afterwards
         prev_dir = Path.cwd()
         try:
             os.chdir(self.workspace_dir)

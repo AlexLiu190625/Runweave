@@ -11,7 +11,7 @@ def _write_tool_file(tools_dir: Path, filename: str, content: str) -> None:
 
 
 def test_scan_tool_subclass(tmp_path: Path) -> None:
-    """Tool 子类在模块中实例化后应被发现。"""
+    """Tool subclass instantiated at module level should be discovered."""
     _write_tool_file(
         tmp_path,
         "greet.py",
@@ -38,7 +38,7 @@ greet = GreetTool()
 
 
 def test_scan_multiple_tools(tmp_path: Path) -> None:
-    """多个文件中的 tool 都应被发现。"""
+    """Tools from multiple files should all be discovered."""
     _write_tool_file(
         tmp_path,
         "alpha.py",
@@ -81,7 +81,7 @@ beta = BetaTool()
 
 
 def test_get_tools_by_name(tmp_path: Path) -> None:
-    """按名称筛选应只返回指定的 tools。"""
+    """Filtering by name should return only the specified tools."""
     _write_tool_file(
         tmp_path,
         "tools.py",
@@ -115,7 +115,7 @@ two = TwoTool()
 
 
 def test_get_tools_unknown_name_ignored(tmp_path: Path) -> None:
-    """请求不存在的 tool 名称时不报错，静默忽略。"""
+    """Requesting a nonexistent tool name should be silently ignored."""
     _write_tool_file(
         tmp_path,
         "tools.py",
@@ -139,7 +139,7 @@ one = OneTool()
 
 
 def test_empty_dir(tmp_path: Path) -> None:
-    """空目录不应报错。"""
+    """Empty directory should not cause errors."""
     tmp_path.mkdir(exist_ok=True)
     loader = ToolLoader(tmp_path)
     assert loader.list_names() == []
@@ -147,13 +147,13 @@ def test_empty_dir(tmp_path: Path) -> None:
 
 
 def test_nonexistent_dir(tmp_path: Path) -> None:
-    """不存在的目录不应报错。"""
+    """Nonexistent directory should not cause errors."""
     loader = ToolLoader(tmp_path / "no_such_dir")
     assert loader.list_names() == []
 
 
 def test_underscore_files_skipped(tmp_path: Path) -> None:
-    """以 _ 开头的文件不被扫描。"""
+    """Files starting with _ should be skipped during scanning."""
     _write_tool_file(
         tmp_path,
         "_private.py",
@@ -176,7 +176,7 @@ hidden = HiddenTool()
 
 
 def test_broken_file_records_error(tmp_path: Path) -> None:
-    """语法错误的文件应记录 error，不影响其他 tool。"""
+    """Files with syntax errors should record an error without affecting other tools."""
     _write_tool_file(tmp_path, "broken.py", "this is not valid python!!!")
     _write_tool_file(
         tmp_path,
@@ -201,7 +201,7 @@ good = GoodTool()
 
 
 def test_catalog_output(tmp_path: Path) -> None:
-    """get_catalog 应生成可读的目录文本。"""
+    """get_catalog should produce a readable catalog text."""
     _write_tool_file(
         tmp_path,
         "calc.py",
@@ -226,6 +226,6 @@ calculator = CalcTool()
 
 
 def test_catalog_empty_when_no_tools(tmp_path: Path) -> None:
-    """无 tool 时 catalog 应为空字符串。"""
+    """Catalog should be an empty string when no tools are found."""
     loader = ToolLoader(tmp_path)
     assert loader.get_catalog() == ""

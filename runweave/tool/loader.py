@@ -8,13 +8,14 @@ from smolagents import Tool
 
 
 class ToolLoader:
-    """扫描 tools 目录，动态加载用户自定义 Tool。
+    """Scan a tools directory and dynamically load user-defined Tools.
 
-    支持两种定义方式：
-    - @tool 装饰器（自动生成 Tool 实例）
-    - Tool 子类（需在模块中实例化）
+    Supports two definition patterns:
+    - @tool decorator (produces a Tool instance automatically)
+    - Tool subclass (must be instantiated at module level)
 
-    ToolLoader 只收集模块级的 Tool 实例，不自动实例化类。
+    ToolLoader only collects module-level Tool instances; it does not
+    auto-instantiate classes.
     """
 
     def __init__(self, tools_dir: Path) -> None:
@@ -23,14 +24,14 @@ class ToolLoader:
         self._errors: dict[str, str] = {}
         self._scan()
 
-    # ── 公开方法 ──────────────────────────────────────────
+    # -- Public methods ------------------------------------------------
 
     def list_names(self) -> list[str]:
-        """返回所有已发现 tool 的名称。"""
+        """Return the names of all discovered tools."""
         return list(self._registry.keys())
 
     def get_tools(self, names: list[str] | None = None) -> list[Tool]:
-        """按名称返回 Tool 实例。names=None 时返回全部。"""
+        """Return Tool instances by name. Returns all when names is None."""
         if names is None:
             return list(self._registry.values())
         result: list[Tool] = []
@@ -40,7 +41,7 @@ class ToolLoader:
         return result
 
     def get_catalog(self) -> str:
-        """生成 tool 目录文本，用于注入 system prompt。"""
+        """Generate a tool catalog string for injection into the system prompt."""
         if not self._registry:
             return ""
         lines = ["## Available Tools (custom)"]
@@ -49,10 +50,10 @@ class ToolLoader:
             lines.append(f"- **{name}**: {desc}")
         return "\n".join(lines)
 
-    # ── 内部方法 ──────────────────────────────────────────
+    # -- Internal methods ----------------------------------------------
 
     def _scan(self) -> None:
-        """扫描 tools_dir 下所有 .py 文件，导入并发现 Tool 实例。"""
+        """Scan all .py files under tools_dir and discover Tool instances."""
         if not self.tools_dir.is_dir():
             return
         for py_file in sorted(self.tools_dir.glob("*.py")):
@@ -61,14 +62,14 @@ class ToolLoader:
             self._load_module(py_file)
 
     def _load_module(self, path: Path) -> None:
-        """导入单个 .py 文件，注册其中所有 Tool 实例。"""
+        """Import a single .py file and register all Tool instances found."""
         module_name = f"_runweave_tools_{path.stem}"
         spec = importlib.util.spec_from_file_location(module_name, path)
         if spec is None or spec.loader is None:
             self._errors[path.name] = "cannot create module spec"
             return
         module = importlib.util.module_from_spec(spec)
-        # 临时加入 sys.modules，防止模块内部 import 出错
+        # Temporarily add to sys.modules so intra-module imports work
         sys.modules[module_name] = module
         try:
             spec.loader.exec_module(module)

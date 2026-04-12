@@ -9,17 +9,18 @@ if TYPE_CHECKING:
 
 
 class LoadSkillTool(Tool):
-    """加载指定 skill 的完整指令文档。"""
+    """Load the full instruction document for a specified skill."""
 
     name = "load_skill"
     description = (
-        "加载指定 skill 的详细指令。"
-        "当你的任务匹配某个可用 skill 时，先调用此工具获取完整指令，再按指令执行。"
+        "Load detailed instructions for a specified skill. "
+        "When your task matches an available skill, call this tool first "
+        "to get the full instructions, then follow them."
     )
     inputs = {
         "skill_name": {
             "type": "string",
-            "description": "要加载的 skill 名称（来自可用 Skills 列表）",
+            "description": "Name of the skill to load (from the Available Skills list)",
         },
     }
     output_type = "string"
@@ -34,28 +35,28 @@ class LoadSkillTool(Tool):
         return self.loader.load_skill(skill_name)
 
     def get_loaded_and_reset(self) -> list[str]:
-        """返回去重的已加载 skill 列表，并重置记录。"""
+        """Return the deduplicated list of loaded skills and reset the record."""
         result = list(dict.fromkeys(self._loaded))
         self._loaded.clear()
         return result
 
 
 class ReadSkillResourceTool(Tool):
-    """读取 skill 目录下的参考文件。"""
+    """Read a reference file from a skill directory."""
 
     name = "read_skill_resource"
     description = (
-        "读取 skill 目录下的文件（references/、assets/ 等）。"
-        "当 skill 指令中引用了额外文件时使用。"
+        "Read a file from a skill directory (references/, assets/, etc.). "
+        "Use this when skill instructions reference additional files."
     )
     inputs = {
         "skill_name": {
             "type": "string",
-            "description": "skill 名称",
+            "description": "Skill name",
         },
         "path": {
             "type": "string",
-            "description": "相对于 skill 目录的文件路径，如 references/FORMS.md",
+            "description": "File path relative to the skill directory, e.g. references/FORMS.md",
         },
     }
     output_type = "string"
@@ -69,25 +70,25 @@ class ReadSkillResourceTool(Tool):
 
 
 class RunSkillScriptTool(Tool):
-    """执行 skill 目录下 scripts/ 中的脚本。"""
+    """Execute a script from a skill's scripts/ directory."""
 
     name = "run_skill_script"
     description = (
-        "执行 skill 目录下 scripts/ 中的脚本，返回脚本输出。"
-        "当 skill 指令要求运行脚本时使用。"
+        "Execute a script from a skill's scripts/ directory and return its output. "
+        "Use this when skill instructions require running a script."
     )
     inputs = {
         "skill_name": {
             "type": "string",
-            "description": "skill 名称",
+            "description": "Skill name",
         },
         "script": {
             "type": "string",
-            "description": "scripts/ 下的脚本文件名，如 validate.py",
+            "description": "Script filename under scripts/, e.g. validate.py",
         },
         "args": {
             "type": "string",
-            "description": "传给脚本的命令行参数（可为空字符串）",
+            "description": "Command-line arguments for the script (can be empty string)",
         },
     }
     output_type = "string"

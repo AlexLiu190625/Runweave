@@ -9,24 +9,24 @@ from runweave.runtime.thread import Thread
 
 
 class ThreadStore:
-    """管理 thread 的磁盘布局。
+    """Manage thread disk layout.
 
-    目录结构:
+    Directory structure:
         <base_dir>/threads/<thread-id>/
-            workspace/        ← agent 的工作目录
-            memory.json       ← AgentMemory 序列化
-            summary.txt       ← run 摘要（Stage 4）
-            meta.json         ← {id, created_at}
+            workspace/        <- agent's working directory
+            memory.json       <- serialized AgentMemory
+            summary.txt       <- run summary
+            meta.json         <- {id, created_at}
     """
 
     def __init__(self, base_dir: Path) -> None:
         self.base_dir = base_dir
         self.threads_dir = base_dir / "threads"
 
-    # ── 公开方法 ──────────────────────────────────────────
+    # -- Public methods ------------------------------------------------
 
     def create(self, thread_id: str | None = None) -> Thread:
-        """创建新 thread，生成目录结构并写入 meta.json。"""
+        """Create a new thread with directory structure and meta.json."""
         tid = thread_id or uuid.uuid4().hex[:12]
         created_at = datetime.now(timezone.utc).isoformat()
 
@@ -35,7 +35,7 @@ class ThreadStore:
         (thread_dir / "workspace").mkdir(exist_ok=True)
         (thread_dir / "runs").mkdir(exist_ok=True)
 
-        # 写入元信息
+        # Write metadata
         meta = {"id": tid, "created_at": created_at}
         (thread_dir / "meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2)
@@ -44,17 +44,17 @@ class ThreadStore:
         return self._build_thread(tid, created_at)
 
     def load(self, thread_id: str) -> Thread:
-        """从磁盘加载已有 thread，不存在则抛出 FileNotFoundError。"""
+        """Load an existing thread from disk. Raises FileNotFoundError if missing."""
         meta_path = self.threads_dir / thread_id / "meta.json"
         meta = json.loads(meta_path.read_text())
         return self._build_thread(meta["id"], meta["created_at"])
 
     def exists(self, thread_id: str) -> bool:
-        """检查 thread 是否存在。"""
+        """Check whether a thread exists."""
         return (self.threads_dir / thread_id / "meta.json").is_file()
 
     def list_threads(self) -> list[Thread]:
-        """列出所有 thread，按创建时间倒序。"""
+        """List all threads, sorted by creation time descending."""
         if not self.threads_dir.is_dir():
             return []
         threads = []
@@ -64,10 +64,10 @@ class ThreadStore:
         threads.sort(key=lambda t: t.created_at, reverse=True)
         return threads
 
-    # ── 内部方法 ──────────────────────────────────────────
+    # -- Internal methods ----------------------------------------------
 
     def _build_thread(self, thread_id: str, created_at: str) -> Thread:
-        """根据 id 和创建时间构造 Thread 对象。"""
+        """Construct a Thread object from id and creation time."""
         thread_dir = self.threads_dir / thread_id
         return Thread(
             id=thread_id,

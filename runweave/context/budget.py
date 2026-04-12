@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# 模型 ID（子串匹配）→ context window 大小（tokens）
-# 匹配时从最长 key 开始，避免短 key 误匹配
-# 只收录当前前沿模型，过时模型走 _DEFAULT_WINDOW
-# 最后更新：2026-04
+# Model ID (substring match) -> context window size (tokens)
+# Matches longest key first to avoid short-key false matches
+# Only includes current frontier models; older models use _DEFAULT_WINDOW
+# Last updated: 2026-04
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     # OpenAI
     "gpt-5.4-mini": 1_050_000,
@@ -46,9 +46,9 @@ _DEFAULT_WINDOW = 32_000
 
 
 def _lookup_context_window(model_id: str) -> int:
-    """从 MODEL_CONTEXT_WINDOWS 查表，子串匹配，最长 key 优先。"""
+    """Look up context window from MODEL_CONTEXT_WINDOWS via substring match, longest key first."""
     model_lower = model_id.lower()
-    # 按 key 长度降序匹配，防止短 key 误匹配
+    # Sort by key length descending to prevent short-key false matches
     for key in sorted(MODEL_CONTEXT_WINDOWS, key=len, reverse=True):
         if key in model_lower:
             return MODEL_CONTEXT_WINDOWS[key]
@@ -57,7 +57,7 @@ def _lookup_context_window(model_id: str) -> int:
 
 @dataclass
 class ContextBudget:
-    """根据模型 context window 计算 token 预算分配。"""
+    """Compute token budget allocation based on model context window."""
 
     model_id: str
     buffer_tokens: int = 4096

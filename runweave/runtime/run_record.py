@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class StepRecord:
-    """单步执行记录。"""
+    """Record of a single execution step."""
 
     step_number: int
     code: str | None = None
@@ -21,7 +21,7 @@ class StepRecord:
 
 @dataclass
 class RunRecord:
-    """一次 run 的结构化记录。"""
+    """Structured record of a single run."""
 
     run_number: int
     timestamp: str
@@ -44,7 +44,7 @@ class RunRecord:
         return cls(**data)
 
     def to_markdown(self) -> str:
-        """生成人可读的 markdown 详细记录。"""
+        """Generate a human-readable markdown report."""
         lines = [
             f"# Run {self.run_number} — {self.timestamp}",
             "",
@@ -81,7 +81,7 @@ def extract_run_record(
     output: Any,
     tools_used: list[str] | None = None,
 ) -> RunRecord:
-    """从 agent.memory 中提取结构化的 RunRecord。"""
+    """Extract a structured RunRecord from agent.memory."""
     from smolagents.memory import ActionStep
 
     step_records: list[StepRecord] = []

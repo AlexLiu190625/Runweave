@@ -7,17 +7,18 @@ from smolagents.models import ChatMessage, MessageRole
 if TYPE_CHECKING:
     from smolagents.models import Model
 
-# 摘要生成的 system prompt
+# System prompt for summary generation
 _SYSTEM_PROMPT = (
-    "你是一个摘要助手。你的任务是维护一个 agent 工作线程的摘要，"
-    "记录 agent 在多次运行中完成的工作。摘要应简洁（200-300 字以内），"
-    "聚焦于：完成了什么任务、产生了什么文件或结果、当前工作状态。"
-    "只输出摘要本身，不要输出任何额外说明。"
+    "You are a summary assistant. Your task is to maintain a summary of an "
+    "agent's work thread, recording what the agent accomplished across multiple "
+    "runs. The summary should be concise (under 200-300 words), focusing on: "
+    "what tasks were completed, what files or results were produced, and the "
+    "current state of work. Output only the summary itself with no extra commentary."
 )
 
 
 class SummaryGenerator:
-    """用 LLM 为 thread 生成/更新摘要。"""
+    """Generate or update a thread summary using an LLM."""
 
     def __init__(self, model: Model) -> None:
         self.model = model
@@ -28,25 +29,26 @@ class SummaryGenerator:
         output: Any,
         previous_summary: str | None = None,
     ) -> str:
-        """根据本次任务和输出，生成/更新 thread 摘要。
+        """Generate or update the thread summary based on the latest run.
 
-        有 previous_summary 时在其基础上追加更新；
-        没有时从头生成。摘要会累积所有 run 的信息。
+        When previous_summary is provided, appends new information to it;
+        otherwise generates an initial summary. The summary accumulates
+        information across all runs.
         """
-        # 构造 user prompt
+        # Build user prompt
         parts: list[str] = []
         if previous_summary:
-            parts.append(f"## 当前摘要\n{previous_summary}")
-            parts.append("请在以上摘要的基础上，追加本次运行的信息。")
+            parts.append(f"## Current Summary\n{previous_summary}")
+            parts.append("Please update the above summary by appending information from this run.")
         else:
-            parts.append("这是该线程的第一次运行，请生成初始摘要。")
+            parts.append("This is the first run of this thread. Please generate an initial summary.")
 
-        parts.append(f"## 本次任务\n{task}")
-        parts.append(f"## 本次输出\n{output}")
+        parts.append(f"## Task\n{task}")
+        parts.append(f"## Output\n{output}")
 
         user_content = "\n\n".join(parts)
 
-        # 调用 LLM
+        # Call LLM
         response = self.model(messages=[
             ChatMessage(role=MessageRole.SYSTEM, content=_SYSTEM_PROMPT),
             ChatMessage(role=MessageRole.USER, content=user_content),
