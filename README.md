@@ -1,5 +1,9 @@
 # Runweave
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![smolagents](https://img.shields.io/badge/built_on-smolagents_1.24-orange.svg)](https://github.com/huggingface/smolagents)
+
 一个构建在 [smolagents](https://github.com/huggingface/smolagents) 之上的轻量运行时，为 agent 添加持久化工作区和线程，使其能够跨会话恢复长期任务。
 
 A thin runtime built on [smolagents](https://github.com/huggingface/smolagents), adding persistent workspaces and threads for long-lived agent tasks.
@@ -19,7 +23,11 @@ Runweave fills that gap. It doesn't reimplement anything smolagents already does
 ## 安装 / Install
 
 ```bash
-pip install runweave
+# 从源码安装（尚未发布到 PyPI）
+# From source (package not yet on PyPI)
+git clone https://github.com/AlexLiu190625/Runweave.git
+cd Runweave
+pip install -e .
 ```
 
 需要 Python 3.12+。
@@ -35,19 +43,37 @@ from runweave import Runtime
 model = OpenAIServerModel(model_id="gpt-4.1")
 rt = Runtime(model=model)
 
-# 第一次 run——自动创建线程和工作区
-# First run — creates a thread and workspace automatically
+# Run 1: create a script
 result = rt.run("Create a Python script that generates Fibonacci numbers.")
-print(result.output)
-print(result.thread_id)  # e.g. "a3f7c2b1"
+print(result.thread_id)           # a3f7c2b1
+print(result.output)              # "Created fibonacci.py..."
 
-# 第二次 run——在同一个工作区继续，agent 通过摘要了解之前做过什么
-# Second run — continues in the same workspace, agent knows prior work via summary
+# Run 2 (days later): continue the work
 result = rt.run(
-    "Add error handling and write tests for the script.",
-    thread_id=result.thread_id,
+    "Add error handling and tests.",
+    thread_id="a3f7c2b1",
 )
+# The agent already knows what was done in Run 1,
+# without receiving the full memory — just a summary.
 ```
+
+### 刚才发生了什么？/ What just happened?
+
+在 Run 1 和 Run 2 之间，Runweave 做了这些事：
+
+Between Run 1 and Run 2, Runweave:
+
+1. 把 Run 1 的完整记忆保存到 `~/.runweave/threads/a3f7c2b1/memory.json`
+2. 通过 LLM 生成了一段约 200 字的摘要："Created fibonacci.py with a recursive implementation..."
+3. 把摘要写入 `summary.txt`
+4. 在 Run 2 启动时，把这段摘要注入 agent 的指令中
+5. Agent 看到摘要后，在工作区里找到了 `fibonacci.py`，读取它，添加了错误处理和测试——整个过程中它没有看到 Run 1 的原始记忆
+
+1. Saved Run 1's full memory to `~/.runweave/threads/a3f7c2b1/memory.json`
+2. Generated a ~200-word summary via LLM: "Created fibonacci.py with a recursive implementation..."
+3. Persisted the summary to `summary.txt`
+4. In Run 2, injected that summary into the agent's instructions
+5. The agent saw the summary, found `fibonacci.py` in the workspace, read it, and added tests — without ever seeing Run 1's raw memory
 
 ## 核心概念 / Core Concepts
 
@@ -123,6 +149,14 @@ task, thread_id
 Everything except step 7 is Runweave's job. Step 7 is entirely smolagents — agent loop, code execution, tool dispatch, LLM calls, final answer detection. Runweave doesn't touch any of that.
 
 ## 上下文窗口管理 / Context Window Management
+
+Runweave 有三个组件处理上下文管理，各管一层：
+
+Runweave has three components for context management, each handling a different layer:
+
+- **ContextBudget** — 配置 token 预算和分配比例，其他两个组件都读它 / Configures token budget and allocation ratios; the other two components read from it.
+- **InstructionCompressor** — 压缩**跨 run** 的指令（历史 + 摘要 + 技能目录）/ Compresses **cross-run** instructions (history + summary + skill catalog).
+- **StepCompressor** — 压缩**单次 run 内**的步骤历史（通过 `step_callbacks`）/ Compresses **intra-run** step history (via `step_callbacks`).
 
 长时间运行的 agent 有一个现实问题：上下文窗口会满。smolagents 没有处理这个问题——它每步都把完整记忆发给 LLM，直到 API 报错。
 
