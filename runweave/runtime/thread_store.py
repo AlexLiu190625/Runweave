@@ -33,6 +33,7 @@ class ThreadStore:
         thread_dir = self.threads_dir / tid
         thread_dir.mkdir(parents=True, exist_ok=True)
         (thread_dir / "workspace").mkdir(exist_ok=True)
+        (thread_dir / "runs").mkdir(exist_ok=True)
 
         # 写入元信息
         meta = {"id": tid, "created_at": created_at}
@@ -74,4 +75,6 @@ class ThreadStore:
             workspace_dir=thread_dir / "workspace",
             memory_path=thread_dir / "memory.json",
             summary_path=thread_dir / "summary.txt",
+            history_path=thread_dir / "HISTORY.md",
+            runs_dir=thread_dir / "runs",
         )

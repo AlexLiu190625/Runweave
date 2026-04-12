@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -20,5 +20,7 @@ class RunResult:
     token_usage: dict | None
     # 耗时统计（可能为 None）
     timing: dict | None
-    # thread 摘要（Stage 4 实现前为 None）
+    # thread 摘要
     summary: str | None = None
+    # 本次 run 加载的 skill 列表
+    skills_used: list[str] = field(default_factory=list)

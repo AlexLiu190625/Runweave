@@ -26,10 +26,18 @@ class LoadSkillTool(Tool):
 
     def __init__(self, loader: SkillLoader) -> None:
         self.loader = loader
+        self._loaded: list[str] = []
         super().__init__()
 
     def forward(self, skill_name: str) -> str:
+        self._loaded.append(skill_name)
         return self.loader.load_skill(skill_name)
+
+    def get_loaded_and_reset(self) -> list[str]:
+        """返回去重的已加载 skill 列表，并重置记录。"""
+        result = list(dict.fromkeys(self._loaded))
+        self._loaded.clear()
+        return result
 
 
 class ReadSkillResourceTool(Tool):

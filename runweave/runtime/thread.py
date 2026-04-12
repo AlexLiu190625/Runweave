@@ -16,5 +16,9 @@ class Thread:
     workspace_dir: Path
     # memory 序列化文件路径
     memory_path: Path
-    # summary 文件路径（Stage 4 使用）
+    # summary 文件路径
     summary_path: Path
+    # HISTORY.md 路径（结构化 run 历史）
+    history_path: Path
+    # runs/ 目录路径（每轮详细记录）
+    runs_dir: Path

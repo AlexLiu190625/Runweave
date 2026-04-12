@@ -45,10 +45,17 @@ class SkillLoader:
     def get_tools(self) -> list[Tool]:
         """返回 skill 相关的 Tool 实例。"""
         return [
-            LoadSkillTool(self),
+            self.load_skill_tool,
             ReadSkillResourceTool(self),
             RunSkillScriptTool(self),
         ]
+
+    @property
+    def load_skill_tool(self) -> LoadSkillTool:
+        """返回 LoadSkillTool 单例，用于追踪 skill 加载记录。"""
+        if not hasattr(self, "_load_skill_tool"):
+            self._load_skill_tool = LoadSkillTool(self)
+        return self._load_skill_tool
 
     def load_skill(self, name: str) -> str:
         """读取指定 skill 的 SKILL.md 正文（不含 frontmatter）。"""
