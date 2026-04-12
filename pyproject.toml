@@ -8,8 +8,8 @@ dependencies = [
     "smolagents[openai]==1.24.0",
 ]
 
-[project.scripts]
-runweave = "runweave:main"
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["uv_build>=0.11.6,<0.12.0"]
