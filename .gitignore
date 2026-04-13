@@ -29,8 +29,15 @@ wheels/
 # Local docs and notes
 CLAUDE.md
 docs/
-examples/
 knowledge/
+
+# Example runtime artifacts
+examples/_tools_demo/
+examples/_skills_demo/
+
+# Example runtime artifacts
+examples/_tools_demo/
+examples/_skills_demo/
 
 # OS
 .DS_Store

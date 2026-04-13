@@ -34,27 +34,36 @@ pip install -e .
 
 Requires Python 3.12+.
 
-## 前置条件 / Prerequisites
+## 配置 / Configuration
 
-Runweave 通过 smolagents 调用 LLM，你需要配置模型的 API Key，如果使用第三方代理还需要设置 Base URL：
+### 1. 模型配置 / Model Configuration
 
-Runweave calls LLMs through smolagents. You need to configure your model's API key, and optionally a base URL if using a third-party proxy:
+Runweave 通过 smolagents 调用 LLM。项目根目录有一个 `.env.example` 文件，复制并填入你的配置：
+
+Runweave calls LLMs through smolagents. Copy the `.env.example` file in the project root and fill in your credentials:
 
 ```bash
-# OpenAI (Quick Start 和大部分示例使用)
-# OpenAI (used by Quick Start and most examples)
-export OPENAI_API_KEY="sk-..."
-
-# 如果使用第三方代理或自部署端点，设置 base URL（OpenAI SDK 自动读取）
-# If using a third-party proxy or self-hosted endpoint (read by OpenAI SDK)
-export OPENAI_BASE_URL="https://api.your-proxy.com/v1"
-
-# 或者使用 Anthropic (参见 examples/08)
-# Or use Anthropic (see examples/08)
-export ANTHROPIC_API_KEY="sk-ant-..."
+cp .env.example .env
 ```
 
-也可以在代码中直接传参 / You can also pass these directly in code:
+`.env` 文件内容 / `.env` file contents:
+
+```bash
+# OpenAI（大部分示例使用）/ OpenAI (used by most examples)
+OPENAI_API_KEY=your_api_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# 如果使用第三方代理，改为代理地址
+# If using a third-party proxy, change to your proxy URL
+# OPENAI_BASE_URL=https://api.your-proxy.com/v1
+
+# Anthropic（参见 examples/08）/ Anthropic (see examples/08)
+# ANTHROPIC_API_KEY=your_anthropic_key_here
+```
+
+所有示例都会通过 `python-dotenv` 自动加载 `.env`，无需手动 export。也可以在代码中直接传参：
+
+All examples auto-load `.env` via `python-dotenv`, no manual export needed. You can also pass credentials directly in code:
 
 ```python
 from smolagents import OpenAIServerModel
@@ -65,6 +74,33 @@ model = OpenAIServerModel(
     api_base="https://api.your-proxy.com/v1",
 )
 ```
+
+### 2. 上下文窗口配置 / Context Window Configuration
+
+Runweave 会根据模型自动设定 token 预算，默认值适用于大多数场景，无需手动配置。如果你需要调整，在创建 `Runtime` 时传入 `ContextBudget`：
+
+Runweave automatically sets token budgets based on the model. Defaults work for most cases. To customize, pass a `ContextBudget` when creating `Runtime`:
+
+```python
+from runweave import Runtime
+from runweave.context import ContextBudget
+
+budget = ContextBudget(
+    model_id="gpt-5.3",
+    buffer_tokens=8192,       # 预留给输出的安全余量 / safety margin for output tokens
+    instruction_ratio=0.40,   # 指令占可用 token 的比例，默认 0.25 / instruction share, default 0.25
+)
+
+rt = Runtime(model=model, context_budget=budget)
+```
+
+`instruction_ratio` 控制跨 run 指令（历史 + 摘要 + 技能目录）和单次 run 步骤历史之间的 token 分配。比例越大，注入的历史越详细，但留给 agent 思考的空间越小。
+
+`instruction_ratio` controls the token split between cross-run instructions (history + summary + skill catalog) and intra-run step history. A higher ratio preserves more detailed history, but leaves less room for the agent's own reasoning.
+
+详见 [examples/05_context_budget.py](examples/05_context_budget.py)。
+
+See [examples/05_context_budget.py](examples/05_context_budget.py) for a working example.
 
 ## 快速上手 / Quick Start
 
