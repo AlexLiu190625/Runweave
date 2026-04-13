@@ -75,28 +75,32 @@ model = OpenAIServerModel(
 )
 ```
 
-### 2. 上下文窗口配置 / Context Window Configuration
+### 2. 上下文窗口配置（可选）/ Context Window Configuration (optional)
 
-Runweave 会根据模型自动设定 token 预算，默认值适用于大多数场景，无需手动配置。如果你需要调整，在创建 `Runtime` 时传入 `ContextBudget`：
+一般不需要配置。`Runtime` 会从模型名自动查表确定 context window 大小，并按默认比例分配 token 预算。只有在需要微调时才手动传入 `ContextBudget`：
 
-Runweave automatically sets token budgets based on the model. Defaults work for most cases. To customize, pass a `ContextBudget` when creating `Runtime`:
+Usually no configuration needed. `Runtime` automatically looks up the context window size from the model name and allocates token budgets with sensible defaults. Only pass a custom `ContextBudget` if you need to tune:
 
 ```python
+from smolagents import OpenAIServerModel
 from runweave import Runtime
 from runweave.context import ContextBudget
 
+model = OpenAIServerModel(model_id="gpt-5.3")
+
 budget = ContextBudget(
-    model_id="gpt-5.3",
-    buffer_tokens=8192,       # 预留给输出的安全余量 / safety margin for output tokens
+    model_id=model.model_id,  # 保持和 model 一致 / keep in sync with model
+    buffer_tokens=8192,       # 预留给输出的安全余量，默认 4096 / output margin, default 4096
     instruction_ratio=0.40,   # 指令占可用 token 的比例，默认 0.25 / instruction share, default 0.25
 )
 
 rt = Runtime(model=model, context_budget=budget)
 ```
 
-`instruction_ratio` 控制跨 run 指令（历史 + 摘要 + 技能目录）和单次 run 步骤历史之间的 token 分配。比例越大，注入的历史越详细，但留给 agent 思考的空间越小。
+三个参数的含义 / What each parameter does:
 
-`instruction_ratio` controls the token split between cross-run instructions (history + summary + skill catalog) and intra-run step history. A higher ratio preserves more detailed history, but leaves less room for the agent's own reasoning.
+- **`buffer_tokens`** — 从 context window 中扣除的安全余量，预留给模型输出和系统开销。默认 4096。/ Tokens reserved from the context window for model output and overhead. Default 4096.
+- **`instruction_ratio`** — 剩余 token 中分给跨 run 指令（历史 + 摘要 + 技能目录）的比例，其余留给 run 内步骤历史。默认 0.25。比例越大，注入的历史越详细，但留给 agent 思考的空间越小。/ Share of remaining tokens for cross-run instructions (history + summary + skill catalog); the rest goes to intra-run step history. Default 0.25. Higher ratio = more history detail, less room for agent reasoning.
 
 详见 [examples/05_context_budget.py](examples/05_context_budget.py)。
 

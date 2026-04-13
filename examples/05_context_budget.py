@@ -19,7 +19,7 @@ model = OpenAIServerModel(model_id="gpt-5.3")
 
 # Custom budget: reserve more tokens for instructions (40% instead of default 25%)
 budget = ContextBudget(
-    model_id="gpt-5.3",
+    model_id=model.model_id,   # keep in sync with the model
     buffer_tokens=8192,        # safety margin for output
     instruction_ratio=0.40,    # 40% of available tokens for instructions
 )
