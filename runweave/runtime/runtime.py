@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,62 @@ from runweave.tool.loader import ToolLoader
 DEFAULT_BASE_DIR = Path.home() / ".runweave"
 
 
+def _build_result_from_memory(agent: CodeAgent) -> Any:
+    """Build a smolagents-RunResult-compatible object from agent memory.
+
+    After ``agent.run(stream=True)`` is fully consumed, smolagents does
+    not build a RunResult.  This function mirrors that post-stream logic
+    so ``_finalize_run`` receives the same object shape.
+    """
+    import types
+
+    from smolagents.agents import AgentMaxStepsError, FinalAnswerStep
+    from smolagents.memory import PlanningStep
+
+    # Output — last FinalAnswerStep
+    output = None
+    for step in reversed(agent.memory.steps):
+        if isinstance(step, FinalAnswerStep):
+            output = step.output
+            break
+
+    # State
+    if agent.memory.steps and isinstance(
+        getattr(agent.memory.steps[-1], "error", None), AgentMaxStepsError
+    ):
+        state = "max_steps_error"
+    else:
+        state = "success"
+
+    # Token usage
+    total_input = 0
+    total_output = 0
+    has_usage = True
+    for step in agent.memory.steps:
+        if isinstance(step, (ActionStep, PlanningStep)):
+            if step.token_usage is None:
+                has_usage = False
+                break
+            total_input += step.token_usage.input_tokens
+            total_output += step.token_usage.output_tokens
+
+    token_usage = (
+        types.SimpleNamespace(
+            dict=lambda: {"input_tokens": total_input, "output_tokens": total_output}
+        )
+        if has_usage
+        else None
+    )
+
+    return types.SimpleNamespace(
+        output=output,
+        state=state,
+        steps=agent.memory.steps,
+        token_usage=token_usage,
+        timing=None,
+    )
+
+
 class Runtime:
     """Top-level entry point for Runweave.
 
@@ -47,6 +104,8 @@ class Runtime:
         skills_dir: Path | None = None,
         tools_dir: Path | None = None,
         context_budget: ContextBudget | None = None,
+        planning_interval: int | None = None,
+        stream_outputs: bool = False,
     ) -> None:
         self.model = model
         self.tools = tools or []
@@ -56,6 +115,8 @@ class Runtime:
         self.skill_loader = SkillLoader(skills_dir) if skills_dir else None
         self.tool_loader = ToolLoader(tools_dir) if tools_dir else None
         self.context_budget = context_budget or ContextBudget(model.model_id)
+        self.planning_interval = planning_interval
+        self.stream_outputs = stream_outputs
 
     def run(
         self,
@@ -68,6 +129,36 @@ class Runtime:
         When thread_id is None a new thread is created automatically;
         passing an existing thread_id continues work in the same workspace.
         """
+        agent, thread, tools_used = self._prepare_run(thread_id, tool_names)
+        smolagents_result = agent.run(task, return_full_result=True)
+        return self._finalize_run(agent, thread, task, smolagents_result, tools_used)
+
+    def run_stream(
+        self,
+        task: str,
+        thread_id: str | None = None,
+        tool_names: list[str] | None = None,
+    ) -> Generator[Any, None, RunResult]:
+        """Execute a task in streaming mode.
+
+        Yields step events (ActionStep, PlanningStep, ChatMessageStreamDelta,
+        etc.) as the agent executes.  After the generator is fully consumed,
+        its return value is a RunResult (accessible via StopIteration.value).
+        """
+        agent, thread, tools_used = self._prepare_run(thread_id, tool_names)
+
+        for event in agent.run(task, stream=True):
+            yield event
+
+        smolagents_result = _build_result_from_memory(agent)
+        return self._finalize_run(agent, thread, task, smolagents_result, tools_used)
+
+    def _prepare_run(
+        self,
+        thread_id: str | None,
+        tool_names: list[str] | None,
+    ) -> tuple[CodeAgent, Thread, list[str]]:
+        """Set up thread, executor, tools, and agent for a run."""
         # 1. Load or create the thread
         if thread_id and self.store.exists(thread_id):
             thread = self.store.load(thread_id)
@@ -106,7 +197,7 @@ class Runtime:
         tools.append(ReadFileTool(thread.workspace_dir))
         tools.append(ListFilesTool(thread.workspace_dir))
 
-        # 6. Build CodeAgent — smolagents handles the agent loop
+        # 6. Build CodeAgent
         context_callback = make_context_callback(self.context_budget)
         agent = CodeAgent(
             model=self.model,
@@ -114,20 +205,30 @@ class Runtime:
             executor=executor,
             instructions=instructions,
             step_callbacks={ActionStep: context_callback},
+            planning_interval=self.planning_interval,
+            stream_outputs=self.stream_outputs,
         )
 
-        # 7. Execute the task
-        smolagents_result = agent.run(task, return_full_result=True)
+        return agent, thread, tools_used
 
-        # 8. Extract skills_used
+    def _finalize_run(
+        self,
+        agent: CodeAgent,
+        thread: Thread,
+        task: str,
+        smolagents_result: Any,
+        tools_used: list[str],
+    ) -> RunResult:
+        """Post-process a completed run: persist memory, history, summary."""
+        # Extract skills_used
         skills_used: list[str] = []
         if self.skill_loader:
             skills_used = self.skill_loader.load_skill_tool.get_loaded_and_reset()
 
-        # 9. Persist memory to disk
+        # Persist memory to disk
         save_memory(agent.memory, thread.memory_path)
 
-        # 10. Write run record and regenerate HISTORY.md
+        # Write run record and regenerate HISTORY.md
         history_writer = HistoryWriter(thread.runs_dir, thread.history_path)
         run_record = extract_run_record(
             run_number=history_writer.next_run_number(),
@@ -141,10 +242,7 @@ class Runtime:
         history_writer.save_run(run_record)
         history_writer.generate_history()
 
-        # 11. Generate/update summary
-        # Summary generation is a secondary LLM call; if it fails, the run
-        # itself already succeeded and memory/history are persisted.  Fall
-        # back to the previous summary so RunResult is still usable.
+        # Generate/update summary
         previous_summary = (
             thread.summary_path.read_text().strip()
             if thread.summary_path.is_file()
@@ -162,7 +260,7 @@ class Runtime:
             logger.warning("Summary generation failed; using previous summary", exc_info=True)
             summary = previous_summary
 
-        # 12. Assemble RunResult
+        # Assemble RunResult
         return RunResult(
             output=smolagents_result.output,
             thread_id=thread.id,
