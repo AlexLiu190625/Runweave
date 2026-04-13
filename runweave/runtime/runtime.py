@@ -95,8 +95,16 @@ class Runtime:
         if self.skill_loader:
             tools.extend(self.skill_loader.get_tools())
 
-        # 5. Register ReadRunDetailTool (load historical run details on demand)
+        # 5. Register built-in tools
         tools.append(ReadRunDetailTool(thread.runs_dir))
+        from runweave.runtime.workspace_tools import (
+            ListFilesTool,
+            ReadFileTool,
+            WriteFileTool,
+        )
+        tools.append(WriteFileTool(thread.workspace_dir))
+        tools.append(ReadFileTool(thread.workspace_dir))
+        tools.append(ListFilesTool(thread.workspace_dir))
 
         # 6. Build CodeAgent — smolagents handles the agent loop
         context_callback = make_context_callback(self.context_budget)
