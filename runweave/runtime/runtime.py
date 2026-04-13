@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from smolagents import CodeAgent, Tool
 from smolagents.memory import ActionStep
@@ -131,18 +134,25 @@ class Runtime:
         history_writer.generate_history()
 
         # 11. Generate/update summary
+        # Summary generation is a secondary LLM call; if it fails, the run
+        # itself already succeeded and memory/history are persisted.  Fall
+        # back to the previous summary so RunResult is still usable.
         previous_summary = (
             thread.summary_path.read_text().strip()
             if thread.summary_path.is_file()
             else None
         )
-        summary_gen = SummaryGenerator(self.model)
-        summary = summary_gen.generate(
-            task=task,
-            output=smolagents_result.output,
-            previous_summary=previous_summary,
-        )
-        thread.summary_path.write_text(summary)
+        try:
+            summary_gen = SummaryGenerator(self.model)
+            summary = summary_gen.generate(
+                task=task,
+                output=smolagents_result.output,
+                previous_summary=previous_summary,
+            )
+            thread.summary_path.write_text(summary)
+        except Exception:
+            logger.warning("Summary generation failed; using previous summary", exc_info=True)
+            summary = previous_summary
 
         # 12. Assemble RunResult
         return RunResult(
@@ -164,7 +174,7 @@ class Runtime:
             skills_used=skills_used,
         )
 
-    def _collect_instruction_parts(self, thread: Thread) -> dict[str, str | None]:
+    def _collect_instruction_parts(self, thread: Thread) -> dict:
         """Collect instruction components for InstructionCompressor."""
         skill_catalog = None
         if self.skill_loader:
@@ -172,11 +182,9 @@ class Runtime:
             if catalog:
                 skill_catalog = catalog
 
-        history_md = None
-        if thread.history_path.is_file():
-            history = thread.history_path.read_text().strip()
-            if history:
-                history_md = history
+        # Load structured run records instead of reading HISTORY.md text
+        history_writer = HistoryWriter(thread.runs_dir, thread.history_path)
+        history_records = history_writer.load_records() or None
 
         thread_summary = None
         if thread.summary_path.is_file():
@@ -187,6 +195,6 @@ class Runtime:
         return {
             "user_instructions": self.instructions,
             "skill_catalog": skill_catalog,
-            "history_md": history_md,
+            "history_records": history_records,
             "thread_summary": thread_summary,
         }

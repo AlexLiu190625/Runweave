@@ -72,7 +72,7 @@ class SkillLoader:
             return f"Error: skill '{skill_name}' not found."
         # Path safety: resolved path must stay within the skill directory
         target = (meta.path / path).resolve()
-        if not str(target).startswith(str(meta.path)):
+        if not target.is_relative_to(meta.path):
             return "Error: path traversal detected, access outside the skill directory is not allowed."
         if not target.is_file():
             return f"Error: file not found: {path}"
@@ -85,7 +85,7 @@ class SkillLoader:
             return f"Error: skill '{skill_name}' not found."
         # Script must be inside the scripts/ subdirectory
         script_path = (meta.path / "scripts" / script).resolve()
-        if not str(script_path).startswith(str(meta.path / "scripts")):
+        if not script_path.is_relative_to(meta.path / "scripts"):
             return "Error: script path traversal detected, only scripts/ directory files are allowed."
         if not script_path.is_file():
             return f"Error: script not found: scripts/{script}"

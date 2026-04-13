@@ -10,6 +10,11 @@ from runweave.runtime.run_record import RunRecord
 if TYPE_CHECKING:
     pass
 
+def _escape_cell(text: str) -> str:
+    """Escape text for markdown table cells and single-line contexts."""
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
 # Max lines of code per step shown in HISTORY.md
 _MAX_CODE_LINES = 10
 # Number of recent runs to include in the Recent Runs section
@@ -57,7 +62,7 @@ class HistoryWriter:
 
     def generate_history(self) -> None:
         """Regenerate HISTORY.md from the runs/ directory."""
-        records = self._load_all_records()
+        records = self.load_records()
         if not records:
             return
 
@@ -75,7 +80,9 @@ class HistoryWriter:
             tools = ", ".join(r.tools_used) if r.tools_used else "—"
             task_short = r.task[:60] + "..." if len(r.task) > 60 else r.task
             lines.append(
-                f"| {r.run_number} | {time_short} | {task_short} | {r.state} | {skills} | {tools} |"
+                f"| {r.run_number} | {time_short} "
+                f"| {_escape_cell(task_short)} "
+                f"| {r.state} | {skills} | {tools} |"
             )
         lines.append("")
 
@@ -85,8 +92,9 @@ class HistoryWriter:
         lines.append("")
         for r in reversed(recent):
             skills_str = ", ".join(r.skills_used) if r.skills_used else "—"
+            task_title = _escape_cell(r.task[:50])
             lines.append(
-                f"### Run {r.run_number} — {r.task[:50]} ({r.state})"
+                f"### Run {r.run_number} — {task_title} ({r.state})"
             )
             tools_str = ", ".join(r.tools_used) if r.tools_used else "—"
             lines.append(f"Skills: {skills_str} | Tools: {tools_str} | Steps: {r.step_count}")
@@ -104,18 +112,20 @@ class HistoryWriter:
                         )
                     lines.append("```")
                 if step.output:
-                    # Truncate overly long output
                     output_text = step.output[:500]
                     if len(step.output) > 500:
                         output_text += "..."
-                    lines.append(f"> {output_text}")
+                    # Prefix each line with > for proper block quote
+                    for quote_line in output_text.split("\n"):
+                        lines.append(f"> {quote_line}")
                 lines.append("")
-            lines.append(f"**Output:** {str(r.output)[:200]}")
+            output_str = _escape_cell(str(r.output)[:200])
+            lines.append(f"**Output:** {output_str}")
             lines.append("")
 
         self.history_path.write_text("\n".join(lines), encoding="utf-8")
 
-    def _load_all_records(self) -> list[RunRecord]:
+    def load_records(self) -> list[RunRecord]:
         """Load all RunRecords sorted by run_number."""
         records: list[RunRecord] = []
         for json_path in sorted(self.runs_dir.glob("run-*.json")):

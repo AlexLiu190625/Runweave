@@ -8,7 +8,12 @@ from smolagents import LocalPythonExecutor
 
 
 class WorkspaceExecutor(LocalPythonExecutor):
-    """Executor that runs code inside a designated workspace directory."""
+    """Executor that runs code inside a designated workspace directory.
+
+    Not thread-safe: uses os.chdir() to switch the process-global cwd.
+    This mirrors smolagents' own threading model — CodeAgent.run() is
+    also not safe for concurrent use within a single process.
+    """
 
     def __init__(
         self,

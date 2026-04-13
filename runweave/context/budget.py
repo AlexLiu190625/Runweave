@@ -10,6 +10,7 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     # OpenAI
     "gpt-5.4-mini": 1_050_000,
     "gpt-5.4": 1_050_000,
+    "gpt-5.3": 1_047_576,
     "gpt-4.1-nano": 1_047_576,
     "gpt-4.1-mini": 1_047_576,
     "gpt-4.1": 1_047_576,

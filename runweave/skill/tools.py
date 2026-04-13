@@ -27,6 +27,9 @@ class LoadSkillTool(Tool):
 
     def __init__(self, loader: SkillLoader) -> None:
         self.loader = loader
+        # Tracks skills loaded during a single run; reset by get_loaded_and_reset().
+        # Not thread-safe: assumes sequential Runtime.run() calls, which matches
+        # smolagents' own single-threaded execution model.
         self._loaded: list[str] = []
         super().__init__()
 

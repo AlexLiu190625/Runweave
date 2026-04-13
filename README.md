@@ -34,13 +34,29 @@ pip install -e .
 
 Requires Python 3.12+.
 
+## 前置条件 / Prerequisites
+
+Runweave 通过 smolagents 调用 LLM，你需要配置对应的 API Key：
+
+Runweave calls LLMs through smolagents. You need to set the API key for your chosen provider:
+
+```bash
+# OpenAI (Quick Start 和大部分示例使用)
+# OpenAI (used by Quick Start and most examples)
+export OPENAI_API_KEY="sk-..."
+
+# 或者使用 Anthropic (参见 examples/08)
+# Or use Anthropic (see examples/08)
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
 ## 快速上手 / Quick Start
 
 ```python
 from smolagents import OpenAIServerModel
 from runweave import Runtime
 
-model = OpenAIServerModel(model_id="gpt-4.1")
+model = OpenAIServerModel(model_id="gpt-5.3")
 rt = Runtime(model=model)
 
 # Run 1: create a script
