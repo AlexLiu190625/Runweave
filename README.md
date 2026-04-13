@@ -36,18 +36,34 @@ Requires Python 3.12+.
 
 ## 前置条件 / Prerequisites
 
-Runweave 通过 smolagents 调用 LLM，你需要配置对应的 API Key：
+Runweave 通过 smolagents 调用 LLM，你需要配置模型的 API Key，如果使用第三方代理还需要设置 Base URL：
 
-Runweave calls LLMs through smolagents. You need to set the API key for your chosen provider:
+Runweave calls LLMs through smolagents. You need to configure your model's API key, and optionally a base URL if using a third-party proxy:
 
 ```bash
 # OpenAI (Quick Start 和大部分示例使用)
 # OpenAI (used by Quick Start and most examples)
 export OPENAI_API_KEY="sk-..."
 
+# 如果使用第三方代理或自部署端点，设置 base URL（OpenAI SDK 自动读取）
+# If using a third-party proxy or self-hosted endpoint (read by OpenAI SDK)
+export OPENAI_BASE_URL="https://api.your-proxy.com/v1"
+
 # 或者使用 Anthropic (参见 examples/08)
 # Or use Anthropic (see examples/08)
 export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+也可以在代码中直接传参 / You can also pass these directly in code:
+
+```python
+from smolagents import OpenAIServerModel
+
+model = OpenAIServerModel(
+    model_id="gpt-5.3",
+    api_key="sk-...",
+    api_base="https://api.your-proxy.com/v1",
+)
 ```
 
 ## 快速上手 / Quick Start
