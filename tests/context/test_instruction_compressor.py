@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from runweave.context.budget import ContextBudget
 from runweave.context.instruction_compressor import InstructionCompressor
-from runweave.runtime.run_record import RunRecord, StepRecord
+from runweave.runtime.run_record import (
+    RunRecord,
+    StepRecord,
+    render_recent_runs,
+    render_run_log,
+)
 
 
 def _make_compressor(available_tokens: int = 100_000) -> InstructionCompressor:
@@ -85,23 +90,23 @@ def test_history_compressed_when_over_budget():
     )
     assert "Be helpful" in result
     # Full render would be very large; compressed result should be much smaller
-    full = InstructionCompressor._render_full(records)
+    full = render_run_log(records) + "\n\n" + render_recent_runs(records, include_steps=True)
     assert len(result) < len(full)
 
 
 def test_render_headers_only():
-    """_render_headers_only should exclude code blocks and detailed output."""
+    """render_recent_runs(include_steps=False) should exclude code blocks."""
     records = [_make_record(1, task="Task one", num_steps=2)]
-    rendered = InstructionCompressor._render_headers_only(records)
+    rendered = render_recent_runs(records, include_steps=False)
     assert "### Run 1" in rendered
     assert "compute_" not in rendered
     assert "**Output:**" in rendered
 
 
 def test_render_run_log_only():
-    """_render_run_log should contain only the table, no Recent Runs."""
+    """render_run_log should contain only the table, no Recent Runs."""
     records = [_make_record(1), _make_record(2)]
-    rendered = InstructionCompressor._render_run_log(records)
+    rendered = render_run_log(records)
     assert "Run Log" in rendered
     assert "Recent Runs" not in rendered
     assert "| 1 |" in rendered
@@ -109,18 +114,18 @@ def test_render_run_log_only():
 
 
 def test_render_run_log_truncated():
-    """Passing a slice of records to _render_run_log should limit rows."""
+    """Passing a slice of records to render_run_log should limit rows."""
     records = [_make_record(i + 1) for i in range(20)]
-    rendered = InstructionCompressor._render_run_log(records[-5:])
+    rendered = render_run_log(records[-5:])
     assert "| 20 |" in rendered
     assert "| 16 |" in rendered
     assert "| 15 |" not in rendered
 
 
 def test_render_full_includes_code():
-    """_render_full should include code blocks in recent runs."""
+    """render_recent_runs(include_steps=True) should include code blocks."""
     records = [_make_record(1, num_steps=2)]
-    rendered = InstructionCompressor._render_full(records)
+    rendered = render_recent_runs(records, include_steps=True)
     assert "```python" in rendered
     assert "compute_1" in rendered
 
@@ -128,7 +133,7 @@ def test_render_full_includes_code():
 def test_task_with_pipe_escaped():
     """Pipe characters in task should be escaped in run log table."""
     records = [_make_record(1, task="compare A | B")]
-    rendered = InstructionCompressor._render_run_log(records)
+    rendered = render_run_log(records)
     assert "\\|" in rendered
     # Should not break the table (no bare | inside the cell)
 
@@ -136,5 +141,5 @@ def test_task_with_pipe_escaped():
 def test_task_with_newline_escaped():
     """Newline in task should be replaced with space."""
     records = [_make_record(1, task="line one\nline two")]
-    rendered = InstructionCompressor._render_run_log(records)
+    rendered = render_run_log(records)
     assert "\n" not in rendered.split("\n")[-1] or "line one line two" in rendered

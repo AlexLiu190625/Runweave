@@ -16,6 +16,10 @@ _SYSTEM_PROMPT = (
     "current state of work. Output only the summary itself with no extra commentary."
 )
 
+# When the previous summary exceeds this word count, switch from "append" to
+# "condense and rewrite" mode to prevent unbounded growth.
+_CONDENSE_THRESHOLD = 400
+
 
 class SummaryGenerator:
     """Generate or update a thread summary using an LLM."""
@@ -38,8 +42,20 @@ class SummaryGenerator:
         # Build user prompt
         parts: list[str] = []
         if previous_summary:
+            word_count = len(previous_summary.split())
             parts.append(f"## Current Summary\n{previous_summary}")
-            parts.append("Please update the above summary by appending information from this run.")
+            if word_count > _CONDENSE_THRESHOLD:
+                parts.append(
+                    "The summary above has grown too long. "
+                    "Rewrite it as a concise 200-word summary, "
+                    "keeping only the most important information, "
+                    "then incorporate the new run below."
+                )
+            else:
+                parts.append(
+                    "Please update the above summary by appending "
+                    "information from this run."
+                )
         else:
             parts.append("This is the first run of this thread. Please generate an initial summary.")
 

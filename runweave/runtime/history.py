@@ -1,24 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from smolagents import Tool
 
-from runweave.runtime.run_record import RunRecord
-
-if TYPE_CHECKING:
-    pass
-
-def _escape_cell(text: str) -> str:
-    """Escape text for markdown table cells and single-line contexts."""
-    return text.replace("|", "\\|").replace("\n", " ")
-
-
-# Max lines of code per step shown in HISTORY.md
-_MAX_CODE_LINES = 10
-# Number of recent runs to include in the Recent Runs section
-_DEFAULT_RECENT_COUNT = 3
+from runweave.runtime.run_record import (
+    DEFAULT_RECENT_COUNT,
+    RunRecord,
+    render_recent_runs,
+    render_run_log,
+)
 
 
 class HistoryWriter:
@@ -28,7 +19,7 @@ class HistoryWriter:
         self,
         runs_dir: Path,
         history_path: Path,
-        recent_count: int = _DEFAULT_RECENT_COUNT,
+        recent_count: int = DEFAULT_RECENT_COUNT,
     ) -> None:
         self.runs_dir = runs_dir
         self.history_path = history_path
@@ -66,64 +57,14 @@ class HistoryWriter:
         if not records:
             return
 
-        lines: list[str] = []
-        lines.append("# Thread History")
-        lines.append("")
-
-        # Run Log table
-        lines.append("## Run Log")
-        lines.append("| # | Time | Task | State | Skills | Tools |")
-        lines.append("|---|------|------|-------|--------|-------|")
-        for r in records:
-            time_short = r.timestamp[:10] if len(r.timestamp) >= 10 else r.timestamp
-            skills = ", ".join(r.skills_used) if r.skills_used else "—"
-            tools = ", ".join(r.tools_used) if r.tools_used else "—"
-            task_short = r.task[:60] + "..." if len(r.task) > 60 else r.task
-            lines.append(
-                f"| {r.run_number} | {time_short} "
-                f"| {_escape_cell(task_short)} "
-                f"| {r.state} | {skills} | {tools} |"
-            )
-        lines.append("")
-
-        # Recent Runs details
-        recent = records[-self.recent_count :]
-        lines.append("## Recent Runs")
-        lines.append("")
-        for r in reversed(recent):
-            skills_str = ", ".join(r.skills_used) if r.skills_used else "—"
-            task_title = _escape_cell(r.task[:50])
-            lines.append(
-                f"### Run {r.run_number} — {task_title} ({r.state})"
-            )
-            tools_str = ", ".join(r.tools_used) if r.tools_used else "—"
-            lines.append(f"Skills: {skills_str} | Tools: {tools_str} | Steps: {r.step_count}")
-            lines.append("")
-            for step in r.steps:
-                lines.append(f"Step {step.step_number}:")
-                if step.code:
-                    code_lines = step.code.split("\n")
-                    lines.append("```python")
-                    lines.extend(code_lines[:_MAX_CODE_LINES])
-                    if len(code_lines) > _MAX_CODE_LINES:
-                        lines.append(
-                            f"# ... ({len(code_lines) - _MAX_CODE_LINES} more lines, "
-                            f"use read_run_detail({r.run_number}) for full code)"
-                        )
-                    lines.append("```")
-                if step.output:
-                    output_text = step.output[:500]
-                    if len(step.output) > 500:
-                        output_text += "..."
-                    # Prefix each line with > for proper block quote
-                    for quote_line in output_text.split("\n"):
-                        lines.append(f"> {quote_line}")
-                lines.append("")
-            output_str = _escape_cell(str(r.output)[:200])
-            lines.append(f"**Output:** {output_str}")
-            lines.append("")
-
-        self.history_path.write_text("\n".join(lines), encoding="utf-8")
+        parts = [
+            render_run_log(records),
+            "",
+            render_recent_runs(
+                records, count=self.recent_count, include_steps=True
+            ),
+        ]
+        self.history_path.write_text("\n".join(parts), encoding="utf-8")
 
     def load_records(self) -> list[RunRecord]:
         """Load all RunRecords sorted by run_number."""

@@ -335,7 +335,7 @@ rt = Runtime(
 Runtime(
     model: Model,                                     # smolagents model instance
     tools: list[Tool] | None = None,                  # tools passed directly
-    instructions: str | None = None,                  # system instructions
+    instructions: str | None = None,                  # additional instructions appended to smolagents' built-in system prompt
     base_dir: Path | None = None,                     # data dir, default ~/.runweave
     additional_authorized_imports: list[str] = None,   # extra imports for executor
     skills_dir: Path | None = None,                   # skills directory

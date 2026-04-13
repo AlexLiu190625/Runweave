@@ -11,6 +11,8 @@ from smolagents import CodeAgent, Tool
 from smolagents.memory import ActionStep
 from smolagents.models import Model
 
+from runweave.runtime.run_record import _count_action_steps
+
 from runweave.context import (
     ContextBudget,
     InstructionCompressor,
@@ -265,7 +267,7 @@ class Runtime:
             output=smolagents_result.output,
             thread_id=thread.id,
             state=smolagents_result.state,
-            step_count=len(smolagents_result.steps),
+            step_count=_count_action_steps(smolagents_result.steps),
             token_usage=(
                 smolagents_result.token_usage.dict()
                 if smolagents_result.token_usage
