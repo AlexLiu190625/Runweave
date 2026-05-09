@@ -143,3 +143,75 @@ def test_task_with_newline_escaped():
     records = [_make_record(1, task="line one\nline two")]
     rendered = render_run_log(records)
     assert "\n" not in rendered.split("\n")[-1] or "line one line two" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Key Facts injection
+# ---------------------------------------------------------------------------
+
+
+def test_key_facts_injected_when_provided():
+    comp = _make_compressor()
+    result = comp.compress(
+        user_instructions="Be helpful.",
+        skill_catalog=None,
+        history_records=None,
+        thread_summary=None,
+        key_facts="- [run 1] Goal: build X\n- [run 2] Forbid editing auth/",
+    )
+    assert "## Key Facts" in result
+    assert "[run 1] Goal: build X" in result
+    assert "Forbid editing auth/" in result
+
+
+def test_key_facts_preserved_on_tight_budget():
+    """Under tight budget, key_facts is a fixed part and must survive."""
+    comp = _make_compressor(available_tokens=200)
+    records = [_make_record(i + 1, num_steps=3, obs_len=500) for i in range(8)]
+    result = comp.compress(
+        user_instructions="Be helpful.",
+        skill_catalog=None,
+        history_records=records,
+        thread_summary=None,
+        key_facts="- [run 1] Critical anchor fact",
+    )
+    assert "Critical anchor fact" in result
+
+
+def test_key_facts_none_omits_section():
+    comp = _make_compressor()
+    result = comp.compress(
+        user_instructions="x",
+        skill_catalog=None,
+        history_records=None,
+        thread_summary=None,
+        key_facts=None,
+    )
+    assert "Key Facts" not in result
+
+
+def test_key_facts_ordering_before_summary():
+    """Key Facts should appear before Thread Summary in the assembled text."""
+    comp = _make_compressor()
+    result = comp.compress(
+        user_instructions="x",
+        skill_catalog=None,
+        history_records=None,
+        thread_summary="narrative summary text",
+        key_facts="- [run 1] fact A",
+    )
+    kf_pos = result.index("Key Facts")
+    summary_pos = result.index("Thread Summary")
+    assert kf_pos < summary_pos
+
+
+def test_key_facts_is_optional_parameter():
+    """Call sites that don't pass key_facts should still work (back-compat)."""
+    comp = _make_compressor()
+    result = comp.compress(
+        user_instructions="x",
+        skill_catalog=None,
+        history_records=None,
+        thread_summary=None,
+    )
+    assert result == "x"

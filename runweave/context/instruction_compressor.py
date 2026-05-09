@@ -32,8 +32,15 @@ class InstructionCompressor:
         skill_catalog: str | None,
         history_records: list[RunRecord] | None,
         thread_summary: str | None,
+        key_facts: str | None = None,
     ) -> str | None:
-        """Assemble and compress instructions to stay within instruction_budget."""
+        """Assemble and compress instructions to stay within instruction_budget.
+
+        Fixed parts are never trimmed. Ordering:
+        user_instructions -> skill_catalog -> key_facts -> thread_summary.
+        key_facts is a curated anchor list that complements the narrative
+        summary — it deserves the same non-compressible guarantee.
+        """
         limit = self.budget.instruction_budget()
 
         # Non-compressible parts (never trimmed)
@@ -42,6 +49,8 @@ class InstructionCompressor:
             fixed_parts.append(user_instructions)
         if skill_catalog:
             fixed_parts.append(skill_catalog)
+        if key_facts:
+            fixed_parts.append(f"\n## Key Facts\n{key_facts}")
         if thread_summary:
             fixed_parts.append(f"\n## Thread Summary\n{thread_summary}")
 

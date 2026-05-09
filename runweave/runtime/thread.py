@@ -18,6 +18,8 @@ class Thread:
     memory_path: Path
     # Path to the summary file
     summary_path: Path
+    # Path to the key-facts file (curated anchor facts for future runs)
+    key_facts_path: Path
     # Path to HISTORY.md (structured run history)
     history_path: Path
     # Path to the runs/ directory (per-run detailed records)

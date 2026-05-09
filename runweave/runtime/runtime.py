@@ -20,6 +20,7 @@ from runweave.context import (
 )
 from runweave.executor.workspace_executor import WorkspaceExecutor
 from runweave.runtime.history import HistoryWriter, ReadRunDetailTool
+from runweave.runtime.key_facts import KeyFactsDistiller
 from runweave.runtime.memory_io import save_memory
 from runweave.runtime.result import RunResult
 from runweave.runtime.run_record import extract_run_record
@@ -244,23 +245,30 @@ class Runtime:
         history_writer.save_run(run_record)
         history_writer.generate_history()
 
-        # Generate/update summary
+        # Generate/update summary and key_facts in parallel (two independent
+        # LLM calls). ThreadPoolExecutor keeps latency close to one call while
+        # each side has its own fault boundary.
         previous_summary = (
             thread.summary_path.read_text().strip()
             if thread.summary_path.is_file()
             else None
         )
-        try:
-            summary_gen = SummaryGenerator(self.model)
-            summary = summary_gen.generate(
-                task=task,
-                output=smolagents_result.output,
-                previous_summary=previous_summary,
-            )
+        previous_key_facts = (
+            thread.key_facts_path.read_text().strip()
+            if thread.key_facts_path.is_file()
+            else None
+        )
+        summary, key_facts = self._generate_summary_and_key_facts(
+            task=task,
+            output=smolagents_result.output,
+            previous_summary=previous_summary,
+            previous_key_facts=previous_key_facts,
+            run_number=run_record.run_number,
+        )
+        if summary:
             thread.summary_path.write_text(summary)
-        except Exception:
-            logger.warning("Summary generation failed; using previous summary", exc_info=True)
-            summary = previous_summary
+        if key_facts:
+            thread.key_facts_path.write_text(key_facts)
 
         # Assemble RunResult
         return RunResult(
@@ -282,6 +290,56 @@ class Runtime:
             skills_used=skills_used,
         )
 
+    def _generate_summary_and_key_facts(
+        self,
+        task: str,
+        output: Any,
+        previous_summary: str | None,
+        previous_key_facts: str | None,
+        run_number: int,
+    ) -> tuple[str | None, str | None]:
+        """Run SummaryGenerator and KeyFactsDistiller in parallel.
+
+        Each side has an independent fault boundary — failure in one does not
+        affect the other. On failure, the previous value is reused (or None if
+        no previous value exists).
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _run_summary() -> str | None:
+            try:
+                return SummaryGenerator(self.model).generate(
+                    task=task,
+                    output=output,
+                    previous_summary=previous_summary,
+                )
+            except Exception:
+                logger.warning(
+                    "Summary generation failed; using previous summary",
+                    exc_info=True,
+                )
+                return previous_summary
+
+        def _run_key_facts() -> str | None:
+            try:
+                return KeyFactsDistiller(self.model).distill(
+                    task=task,
+                    output=output,
+                    run_number=run_number,
+                    previous_key_facts=previous_key_facts,
+                )
+            except Exception:
+                logger.warning(
+                    "Key facts distillation failed; using previous key_facts",
+                    exc_info=True,
+                )
+                return previous_key_facts
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            summary_future = pool.submit(_run_summary)
+            key_facts_future = pool.submit(_run_key_facts)
+            return summary_future.result(), key_facts_future.result()
+
     def _collect_instruction_parts(self, thread: Thread) -> dict:
         """Collect instruction components for InstructionCompressor."""
         skill_catalog = None
@@ -300,9 +358,16 @@ class Runtime:
             if summary:
                 thread_summary = summary
 
+        key_facts = None
+        if thread.key_facts_path.is_file():
+            kf = thread.key_facts_path.read_text().strip()
+            if kf:
+                key_facts = kf
+
         return {
             "user_instructions": self.instructions,
             "skill_catalog": skill_catalog,
             "history_records": history_records,
             "thread_summary": thread_summary,
+            "key_facts": key_facts,
         }

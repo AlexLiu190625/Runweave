@@ -314,7 +314,8 @@ rt = Runtime(
 ~/.runweave/threads/<thread-id>/
     workspace/          # agent 的工作目录 / agent's working directory
     memory.json         # 归档记忆（仅供检查）/ archived memory (inspection only)
-    summary.txt         # 线程摘要 / thread summary
+    summary.txt         # 线程摘要（叙事）/ thread summary (narrative)
+    key_facts.md        # 关键事实（锚点）/ curated anchor facts
     HISTORY.md          # 运行历史索引 / run history index
     runs/
         run-001.json    # 运行记录 / run record
@@ -326,6 +327,32 @@ rt = Runtime(
 `memory.json` 保存了完整的 agent 记忆，但仅供检查——不会在下一次 run 时注入回 LLM 上下文。
 
 `memory.json` stores the full agent memory, but only for inspection — it is not injected back into the LLM context on the next run.
+
+### 两条并联的记忆轨道 / Two parallel memory tracks
+
+每次 run 结束后，Runweave 会并行运行两次独立的 LLM 调用，产出两个互补的制品：
+
+After each run, Runweave fires two independent LLM calls in parallel, producing two complementary artifacts:
+
+- **`summary.txt` — 叙事摘要 / narrative summary**：概括本轮做了什么、当前状态如何。随 run 次数累积并在超过阈值时压缩重写。
+- **`summary.txt` — narrative summary**: describes what happened this run and the current state. Grows across runs, then condenses when it passes a word-count threshold.
+
+- **`key_facts.md` — 关键事实 / curated anchor facts**：受 MemReader 启发，走独立 LLM triage，只保留目标、硬约束、决策、产物等稳定事实。每条带 `[run N]` 前缀；新事实 supersede 旧事实时替换而非追加。它是 thread 的锚点，不随近期活动稀释。
+- **`key_facts.md` — curated anchor facts**: MemReader-inspired selective distillation. Retains only goals, hard constraints, decisions, and produced artifacts, each tagged with `[run N]`. A new fact that supersedes an existing one replaces it rather than appending. This is the thread's anchor — it resists dilution by recent activity.
+
+在下一轮 run 启动时，两者都会注入到 agent 的指令中（key_facts 在前），优先级高于 history，预算紧张时 history 先被砍。
+
+On the next run, both are injected into the agent's instructions (key_facts first) and ranked above history. When the instruction budget is tight, history is cut before either.
+
+### 已有 thread 的迁移 / Migration for existing threads
+
+- 已有 thread 在 v0.2 之前没有 `key_facts.md`。首次 resume 后，distiller 会基于该 run 的 task/output 生成一个初始 `key_facts.md`，随后每轮持续演化。
+- 不需要手动迁移，也不需要删除已有 thread。历史 run 不会追溯补录到 key_facts（distiller 只看当前 run + 已有的 key_facts 文件）。
+- 如果某个 thread 的 key_facts 需要手动编辑或清空，直接修改/删除 `~/.runweave/threads/<id>/key_facts.md` 即可——下一次 run 会从文件的当前状态继续。
+
+- Threads created before v0.2 have no `key_facts.md`. On the first resume after upgrade, the distiller produces an initial file from that run's task/output; subsequent runs evolve it normally.
+- No manual migration is required. Historical runs are not retroactively back-filled (the distiller only sees the current run + the existing `key_facts.md`).
+- To manually curate or reset a thread's key facts, edit or delete `~/.runweave/threads/<id>/key_facts.md` — the next run continues from whatever the file currently contains.
 
 ## API
 

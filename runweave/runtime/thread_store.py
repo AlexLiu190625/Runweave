@@ -15,7 +15,8 @@ class ThreadStore:
         <base_dir>/threads/<thread-id>/
             workspace/        <- agent's working directory
             memory.json       <- serialized AgentMemory
-            summary.txt       <- run summary
+            summary.txt       <- run summary (narrative)
+            key_facts.md      <- curated anchor facts (complements summary)
             meta.json         <- {id, created_at}
     """
 
@@ -75,6 +76,7 @@ class ThreadStore:
             workspace_dir=thread_dir / "workspace",
             memory_path=thread_dir / "memory.json",
             summary_path=thread_dir / "summary.txt",
+            key_facts_path=thread_dir / "key_facts.md",
             history_path=thread_dir / "HISTORY.md",
             runs_dir=thread_dir / "runs",
         )
