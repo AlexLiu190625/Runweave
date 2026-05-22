@@ -238,9 +238,21 @@ Runweave 在两个层面解决这个问题：
 
 Runweave addresses this at two levels:
 
-**跨 run 压缩 (InstructionCompressor)**：注入给 agent 的指令（用户提示 + 技能目录 + 运行历史 + 线程摘要）会被压缩到 token 预算内。历史记录超长时逐级压缩——先删除步骤详情，再只保留运行日志表，最后截断日志行数。用户指令和摘要永不裁剪。
+**跨 run 压缩 (InstructionCompressor)**：注入给 agent 的指令（用户提示 + 技能目录 + key_facts + 线程摘要 + 运行历史）会被压缩到 token 预算内。历史记录超长时按 **U 形衰减** 逐级压缩：头部和尾部 run 始终保留 FULL，中段按距尾部远近渐进降级（TAKEAWAY → TITLE → LOG_LINE）。预算紧张时只压中段，头尾恒定。用户指令、key_facts、摘要永不裁剪。
 
-**Cross-run compression (InstructionCompressor)**: Instructions injected into the agent (user prompt + skill catalog + run history + thread summary) are compressed within a token budget. When history gets too long, it's progressively compressed — first strip step details, then keep only the run log table, then truncate log rows. User instructions and summaries are never trimmed.
+**Cross-run compression (InstructionCompressor)**: Instructions injected into the agent (user prompt + skill catalog + key_facts + thread summary + run history) are compressed within a token budget. When history gets too long, it's compressed via **U-shaped decay**: head runs and tail runs are always rendered FULL; middle runs are progressively bucketed by distance from tail (TAKEAWAY → TITLE → LOG_LINE). Budget pressure only compresses the middle; head and tail are fixed. User instructions, key_facts, and the summary are never trimmed.
+
+```
+N=10 history decay (head_count=2, tail_count=3):
+
+  Run:    1     2     3      4      5      6        7        8     9     10
+  Level:  FULL  FULL  LOG    TITLE  TITLE  TAKEAWAY TAKEAWAY FULL  FULL  FULL
+          └──head──┘  └────────── middle ──────────────────┘ └─────tail──────┘
+```
+
+`ContextBudget(head_count=N, tail_count=M)` 可调节锚定窗口大小。长 thread (N > 20) 配合 key_facts + summary 时，可设 `head_count=0` 关闭头部固定。
+
+`ContextBudget(head_count=N, tail_count=M)` tunes the anchor window. For long threads (N > 20) using key_facts + summary, `head_count=0` is reasonable — the early direction signal is already captured by those tracks.
 
 **单次 run 内压缩 (StepCompressor)**：通过 smolagents 的 `step_callbacks` 扩展点，每步结束后检查实际 token 使用量。超过阈值时，对旧步骤逐级压缩——截断输出、清除推理过程、最后完全清除代码和输出。最近的 3 步始终保持完整。
 

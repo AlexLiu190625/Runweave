@@ -58,11 +58,30 @@ def _lookup_context_window(model_id: str) -> int:
 
 @dataclass
 class ContextBudget:
-    """Compute token budget allocation based on model context window."""
+    """Compute token budget allocation based on model context window.
+
+    ``head_count`` and ``tail_count`` control U-shaped history decay in
+    ``InstructionCompressor``: the first ``head_count`` runs and the last
+    ``tail_count`` runs are always rendered FULL; middle runs are progressively
+    compressed when budget is tight.
+
+    For very long threads (N > 20) using both ``key_facts`` and
+    ``thread_summary``, ``head_count=0`` is a reasonable choice — the early
+    runs' direction information is already captured by those tracks, and
+    pinning them FULL wastes budget that could go to middle runs.
+    """
 
     model_id: str
     buffer_tokens: int = 4096
     instruction_ratio: float = 0.25
+    head_count: int = 2
+    tail_count: int = 3
+
+    def __post_init__(self) -> None:
+        if self.head_count < 0:
+            raise ValueError("head_count must be >= 0")
+        if self.tail_count < 1:
+            raise ValueError("tail_count must be >= 1")
 
     @property
     def context_window(self) -> int:

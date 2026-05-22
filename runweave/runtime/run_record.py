@@ -3,11 +3,25 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from enum import IntEnum
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from smolagents import AgentMemory
+
+
+class DetailLevel(IntEnum):
+    """How much of a RunRecord to render in history sections.
+
+    IntEnum lets us write ``DetailLevel(max(int(lvl) - 1, 0))`` to demote
+    one notch.
+    """
+
+    LOG_LINE = 0   # No section; the run appears only in the Run Log table.
+    TITLE = 1      # One-line header: task + state + step count.
+    TAKEAWAY = 2   # Title + skills/tools/steps + truncated output.
+    FULL = 3       # Title + skills/tools/steps + step bodies + output.
 
 
 @dataclass
@@ -71,6 +85,16 @@ class RunRecord:
         lines.append(str(self.output))
         return "\n".join(lines)
 
+    def render_at_level(self, level: DetailLevel) -> str:
+        """Render this run for inclusion in a history section.
+
+        LOG_LINE returns an empty string — the run is expected to be represented
+        only by its row in the Run Log table, rendered separately.
+        """
+        if level == DetailLevel.LOG_LINE:
+            return ""
+        return "\n".join(_render_run_block(self, level))
+
 
 # -- Shared rendering utilities -----------------------------------------------
 
@@ -107,6 +131,60 @@ def render_run_log(records: list[RunRecord]) -> str:
     return "\n".join(lines)
 
 
+def _render_run_block(r: RunRecord, level: DetailLevel) -> list[str]:
+    """Render a single run as a list of lines at the requested detail level.
+
+    Caller is expected to ``"\\n".join`` the result (or extend a larger line
+    list with it). Returns ``[]`` for ``LOG_LINE`` since that level emits no
+    section text — the run is represented only by its row in the Run Log.
+    """
+    if level == DetailLevel.LOG_LINE:
+        return []
+
+    task_safe = _escape_cell(r.task[:50])
+
+    if level == DetailLevel.TITLE:
+        return [
+            f"### Run {r.run_number} — {task_safe} ({r.state}) [{r.step_count} steps]",
+            "",
+        ]
+
+    # TAKEAWAY and FULL share the header + skills/tools/output framing.
+    skills_str = ", ".join(r.skills_used) if r.skills_used else "—"
+    tools_str = ", ".join(r.tools_used) if r.tools_used else "—"
+    lines: list[str] = [
+        f"### Run {r.run_number} — {task_safe} ({r.state})",
+        f"Skills: {skills_str} | Tools: {tools_str} | Steps: {r.step_count}",
+    ]
+
+    if level == DetailLevel.FULL:
+        lines.append("")
+        for step in r.steps:
+            lines.append(f"Step {step.step_number}:")
+            if step.code:
+                code_lines = step.code.split("\n")
+                lines.append("```python")
+                lines.extend(code_lines[:MAX_CODE_LINES])
+                if len(code_lines) > MAX_CODE_LINES:
+                    lines.append(
+                        f"# ... ({len(code_lines) - MAX_CODE_LINES} more lines, "
+                        f"use read_run_detail({r.run_number}) for full code)"
+                    )
+                lines.append("```")
+            if step.output:
+                output_text = step.output[:500]
+                if len(step.output) > 500:
+                    output_text += "..."
+                for quote_line in output_text.split("\n"):
+                    lines.append(f"> {quote_line}")
+            lines.append("")
+
+    output_safe = _escape_cell(str(r.output)[:200])
+    lines.append(f"**Output:** {output_safe}")
+    lines.append("")
+    return lines
+
+
 def render_recent_runs(
     records: list[RunRecord],
     count: int = DEFAULT_RECENT_COUNT,
@@ -118,41 +196,10 @@ def render_recent_runs(
     When False, only run headers with summary metadata are rendered.
     """
     recent = records[-count:]
+    level = DetailLevel.FULL if include_steps else DetailLevel.TAKEAWAY
     lines: list[str] = ["## Recent Runs", ""]
     for r in reversed(recent):
-        skills_str = ", ".join(r.skills_used) if r.skills_used else "—"
-        tools_str = ", ".join(r.tools_used) if r.tools_used else "—"
-        task_safe = _escape_cell(r.task[:50])
-        lines.append(f"### Run {r.run_number} — {task_safe} ({r.state})")
-        lines.append(
-            f"Skills: {skills_str} | Tools: {tools_str} | Steps: {r.step_count}"
-        )
-
-        if include_steps:
-            lines.append("")
-            for step in r.steps:
-                lines.append(f"Step {step.step_number}:")
-                if step.code:
-                    code_lines = step.code.split("\n")
-                    lines.append("```python")
-                    lines.extend(code_lines[:MAX_CODE_LINES])
-                    if len(code_lines) > MAX_CODE_LINES:
-                        lines.append(
-                            f"# ... ({len(code_lines) - MAX_CODE_LINES} more lines, "
-                            f"use read_run_detail({r.run_number}) for full code)"
-                        )
-                    lines.append("```")
-                if step.output:
-                    output_text = step.output[:500]
-                    if len(step.output) > 500:
-                        output_text += "..."
-                    for quote_line in output_text.split("\n"):
-                        lines.append(f"> {quote_line}")
-                lines.append("")
-
-        output_safe = _escape_cell(str(r.output)[:200])
-        lines.append(f"**Output:** {output_safe}")
-        lines.append("")
+        lines.extend(_render_run_block(r, level))
     return "\n".join(lines)
 
 

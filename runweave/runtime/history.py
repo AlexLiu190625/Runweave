@@ -80,10 +80,13 @@ class HistoryWriter:
         return records
 
 
+READ_RUN_DETAIL_TOOL_NAME = "read_run_detail"
+
+
 class ReadRunDetailTool(Tool):
     """Load the detailed execution record for a given run number on demand."""
 
-    name = "read_run_detail"
+    name = READ_RUN_DETAIL_TOOL_NAME
     description = (
         "Read the detailed execution record for a specified run number, "
         "including full code and output. Use this when you need to review "
