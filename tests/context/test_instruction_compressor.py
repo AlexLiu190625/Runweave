@@ -215,3 +215,51 @@ def test_key_facts_is_optional_parameter():
         thread_summary=None,
     )
     assert result == "x"
+
+
+# ---------------------------------------------------------------------------
+# Plan injection (PR 3b)
+# ---------------------------------------------------------------------------
+
+
+def test_plan_injected_when_provided():
+    comp = _make_compressor()
+    result = comp.compress(
+        user_instructions="Be helpful.",
+        skill_catalog=None,
+        history_records=None,
+        thread_summary=None,
+        plan="- [s1] Define schema (done)\n- [s2] Generate model code (current)",
+    )
+    assert "## Current Plan" in result
+    assert "[s1] Define schema" in result
+    assert "[s2] Generate model code" in result
+
+
+def test_plan_ordering_before_key_facts():
+    """Plan must appear before Key Facts in the assembled output."""
+    comp = _make_compressor()
+    result = comp.compress(
+        user_instructions="x",
+        skill_catalog=None,
+        history_records=None,
+        thread_summary=None,
+        key_facts="- [run 1] anchor fact",
+        plan="- [s1] current step",
+    )
+    plan_pos = result.index("Current Plan")
+    kf_pos = result.index("Key Facts")
+    assert plan_pos < kf_pos
+
+
+def test_plan_none_omits_section():
+    """When plan is None or empty, no Current Plan header should appear."""
+    comp = _make_compressor()
+    result = comp.compress(
+        user_instructions="x",
+        skill_catalog=None,
+        history_records=None,
+        thread_summary=None,
+        plan=None,
+    )
+    assert "Current Plan" not in result

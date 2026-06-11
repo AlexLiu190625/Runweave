@@ -408,6 +408,48 @@ class RunResult:
     skills_used: list[str]   # skills loaded during this run
 ```
 
+### `PlanningRuntime` (v0.3+)
+
+`Runtime` 用一个 model 跑到底；当任务跨越多个 step 且 step 难度差异大时，更好的选择是 `PlanningRuntime`。它由 **planner LLM 一次性出计划** + **Router 按 step metadata 路由 model** + **逐 step 用 smolagents.CodeAgent 执行** 三段组成。
+
+`Runtime` runs a single model end-to-end. For multi-step tasks where steps differ widely in difficulty, `PlanningRuntime` is the better fit: a **planner LLM produces a plan once**, the **Router picks the best-fit model per step from its metadata**, and **each step is executed by smolagents.CodeAgent**.
+
+```python
+from runweave import ModelProfile, PlanningRuntime, Router
+from smolagents import OpenAIServerModel
+
+haiku  = OpenAIServerModel(model_id="claude-haiku-4-5-20251001")
+sonnet = OpenAIServerModel(model_id="claude-sonnet-4-6")
+opus   = OpenAIServerModel(model_id="claude-opus-4-7")
+
+models = [
+    ModelProfile(model=haiku,  context_window=200_000, supports_tools=True,
+                 supports_structured_output=True, coding_score=0.7,
+                 long_context_score=0.65, latency="low",    cost_tier="low"),
+    ModelProfile(model=sonnet, context_window=1_000_000, supports_tools=True,
+                 supports_structured_output=True, coding_score=0.9,
+                 long_context_score=0.85, latency="medium", cost_tier="medium"),
+    ModelProfile(model=opus,   context_window=1_000_000, supports_tools=True,
+                 supports_structured_output=True, coding_score=0.95,
+                 long_context_score=0.9,  latency="high",   cost_tier="high"),
+]
+
+rt = PlanningRuntime(planner_model=opus, models=models, router=Router())
+result = rt.run("Build a dataclass + tests + README")
+```
+
+PlanningRuntime 是 **orchestrator 而非 agent**：它不调 LLM 决定"下一步做什么"。下一步由 `plan.json` 拓扑确定；重规划只在 step 失败 / 超时 / 产物缺失时被确定性触发，且总次数封顶（默认 `max_replans=3`）。
+
+PlanningRuntime is an **orchestrator, not an agent**: it never calls an LLM to decide "what next." The next step comes from `plan.json` topologically; replans are triggered only on deterministic failure conditions (step failed / timed out / expected output missing), capped at `max_replans=3` by default.
+
+每次 `PlanningRuntime.run()` 在 thread 下写一个活动 `plan.json`，结束时归档到 `plans/plan-NNN.json`。归档里能看到每个 step 的 `selected_model_id`、状态、输出、失败原因——一个完整的可追溯轨迹。
+
+Each `PlanningRuntime.run()` writes an active `plan.json` under the thread, archived to `plans/plan-NNN.json` on completion. The archive records `selected_model_id`, status, output, and failure reason for every step — a fully traceable record.
+
+完整示例：[`examples/11_planning_runtime.py`](examples/11_planning_runtime.py)。
+
+Full example: [`examples/11_planning_runtime.py`](examples/11_planning_runtime.py).
+
 ## 依赖 / Dependencies
 
 运行时依赖只有一个：`smolagents[openai]==1.24.0`。开发依赖：`pytest`、`python-dotenv`。

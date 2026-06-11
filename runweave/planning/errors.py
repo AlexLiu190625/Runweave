@@ -14,3 +14,23 @@ class NoCompatibleModelError(Exception):
         )
         self.metadata = metadata
         self.candidates_count = candidates_count
+
+
+class PlannerOutputError(Exception):
+    """Raised when PlannerLLM cannot parse the model's output into a valid Plan."""
+
+    def __init__(self, reason: str, raw_output: str | None = None) -> None:
+        super().__init__(f"Planner output invalid: {reason}")
+        self.reason = reason
+        self.raw_output = raw_output
+
+
+class UnsupportedPlanVersionError(Exception):
+    """Raised when loading a plan.json whose version is not supported."""
+
+    def __init__(self, found_version) -> None:
+        super().__init__(
+            f"Unsupported plan version: {found_version!r}. This Runweave "
+            f"build only reads version=1 plans."
+        )
+        self.found_version = found_version

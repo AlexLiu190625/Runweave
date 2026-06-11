@@ -17,6 +17,8 @@ class ThreadStore:
             memory.json       <- serialized AgentMemory
             summary.txt       <- run summary (narrative)
             key_facts.md      <- curated anchor facts (complements summary)
+            plan.json         <- active plan (only during a PlanningRuntime run)
+            plans/            <- archived plans (plan-NNN.json + plan-orphan-*.json)
             meta.json         <- {id, created_at}
     """
 
@@ -79,4 +81,6 @@ class ThreadStore:
             key_facts_path=thread_dir / "key_facts.md",
             history_path=thread_dir / "HISTORY.md",
             runs_dir=thread_dir / "runs",
+            plan_path=thread_dir / "plan.json",
+            plans_dir=thread_dir / "plans",
         )

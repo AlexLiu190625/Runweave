@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from runweave.context.budget import ContextBudget
 from runweave.context.counter import TokenCounter
-from runweave.runtime.history import READ_RUN_DETAIL_TOOL_NAME
 from runweave.runtime.run_record import (
     DetailLevel,
     RunRecord,
@@ -132,6 +131,8 @@ def _render_history(
             parts.append(block)
 
     if budget_level == 3 and omitted > 0:
+        # Lazy import: avoid module-load circular via runweave.runtime package.
+        from runweave.runtime.history import READ_RUN_DETAIL_TOOL_NAME
         parts.append(
             f"\n*({omitted} middle runs omitted; "
             f"use {READ_RUN_DETAIL_TOOL_NAME}(N) to fetch any of them.)*"
@@ -168,13 +169,15 @@ class InstructionCompressor:
         history_records: list[RunRecord] | None,
         thread_summary: str | None,
         key_facts: str | None = None,
+        plan: str | None = None,
     ) -> str | None:
         """Assemble and compress instructions to stay within instruction_budget.
 
         Fixed parts are never trimmed. Ordering:
-        user_instructions -> skill_catalog -> key_facts -> thread_summary.
-        key_facts is a curated anchor list that complements the narrative
-        summary — it deserves the same non-compressible guarantee.
+        user_instructions -> skill_catalog -> plan -> key_facts -> thread_summary.
+        plan is the "current working surface" (only present under PlanningRuntime);
+        it sits above key_facts so the agent always sees what step is current
+        before reading anchor facts.
         """
         limit = self.budget.instruction_budget()
 
@@ -184,6 +187,8 @@ class InstructionCompressor:
             fixed_parts.append(user_instructions)
         if skill_catalog:
             fixed_parts.append(skill_catalog)
+        if plan:
+            fixed_parts.append(f"\n## Current Plan\n{plan}")
         if key_facts:
             fixed_parts.append(f"\n## Key Facts\n{key_facts}")
         if thread_summary:

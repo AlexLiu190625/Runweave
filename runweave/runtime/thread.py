@@ -24,3 +24,7 @@ class Thread:
     history_path: Path
     # Path to the runs/ directory (per-run detailed records)
     runs_dir: Path
+    # Path to the active plan.json (only present during a PlanningRuntime run)
+    plan_path: Path
+    # Path to the plans/ directory (archived plans + orphans)
+    plans_dir: Path
