@@ -17,11 +17,12 @@ from runweave.planning.plan import Plan, PlanStep
 from runweave.planning.planner import PlannerLLM, ThreadContext
 from runweave.planning.profile import ModelProfile
 from runweave.planning.router import Router
+from runweave.planning.tracking import TokenUsageTracker, TrackedModel
 from runweave.runtime.history import HistoryWriter, ReadRunDetailTool
 from runweave.runtime.key_facts import KeyFactsDistiller
 from runweave.runtime.memory_io import save_memory
 from runweave.runtime.result import RunResult
-from runweave.runtime.run_record import RunRecord, StepRecord
+from runweave.runtime.run_record import RunRecord, StepRecord, _escape_cell
 from runweave.runtime.summary import SummaryGenerator
 from runweave.runtime.thread import Thread
 from runweave.runtime.thread_store import ThreadStore
@@ -34,6 +35,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_DIR = Path.home() / ".runweave"
+
+# Cleanup constants (PR 4).
+_PLANNER_RECENT_RUN_COUNT = 3
+_PLANNER_TASK_PREVIEW_CHARS = 80
 
 
 @dataclass
@@ -54,12 +59,21 @@ class PlanningRuntime:
     step is next. The next step is taken deterministically from the plan via
     ``plan.next_executable()``. The only LLM calls are: 1 planner call, 1 call
     per executed step, and at most ``max_replans`` replan calls.
+
+    Known limitations (v0.3):
+      - ``expected_outputs`` check verifies file existence only, not
+        modification. If an upstream step already created the file and the
+        current step declared it as ``expected_output`` but did nothing, the
+        check still passes. Workaround: planner should avoid duplicating
+        ``expected_outputs`` across steps. v0.4 will add mtime tracking.
     """
 
     def __init__(
         self,
         planner_model: "Model",
         models: list[ModelProfile],
+        *,
+        summary_model: "Model | None" = None,
         router: Router | None = None,
         instructions: str | None = None,
         base_dir: Path | None = None,
@@ -73,8 +87,10 @@ class PlanningRuntime:
     ) -> None:
         if not models:
             raise ValueError("PlanningRuntime requires at least one ModelProfile")
-        self.planner = PlannerLLM(planner_model)
         self.planner_model = planner_model
+        # Cost optimization: a cheaper model can run summary/key_facts while
+        # the planner stays strong. Defaults to planner_model (back-compat).
+        self.summary_model = summary_model if summary_model is not None else planner_model
         self.models = models
         self.router = router or Router()
         self.instructions = instructions
@@ -102,10 +118,19 @@ class PlanningRuntime:
         thread = self._load_or_create_thread(thread_id)
         self._handle_orphan_plan(thread)
 
+        # Shared tracker accumulates token usage from planner + summary +
+        # key_facts calls. Step CodeAgents are NOT wrapped — their usage
+        # comes through _StepResult.token_usage (wrapping would double-count).
+        tracker = TokenUsageTracker()
+        tracked_planner_model = TrackedModel(self.planner_model, tracker)
+        tracked_summary_model = TrackedModel(self.summary_model, tracker)
+        self._tracked_summary_model = tracked_summary_model  # used by _safe_*
+        planner = PlannerLLM(tracked_planner_model)
+
         ctx = self._collect_thread_context(thread)
 
         # 1. Plan (1 LLM call)
-        plan = self.planner.plan(task, ctx)
+        plan = planner.plan(task, ctx)
         plan.plan_number = self._next_plan_number(thread)
         self._write_plan(thread, plan)
 
@@ -155,7 +180,7 @@ class PlanningRuntime:
             ):
                 failure_summary = self._summarize_failures(plan)
                 try:
-                    plan = self.planner.replan(plan, failure_summary, ctx)
+                    plan = planner.replan(plan, failure_summary, ctx)
                 except PlannerOutputError:
                     logger.warning("Replan failed; keeping current plan as-is")
                     break
@@ -166,7 +191,9 @@ class PlanningRuntime:
         # 6. Archive plan
         self._archive_plan(thread, plan)
 
-        # 7. Aggregate single RunRecord and finalize
+        # 7. Aggregate single RunRecord and finalize.
+        # token_usage is computed INSIDE _finalize_planning_run after summary
+        # and key_facts have run, so the tracker has captured all calls.
         return self._finalize_planning_run(
             thread=thread,
             task=task,
@@ -174,7 +201,9 @@ class PlanningRuntime:
             step_outputs=step_outputs,
             aggregated_tools=aggregated_tools,
             aggregated_skills=aggregated_skills,
-            token_usage={"input_tokens": token_in, "output_tokens": token_out},
+            step_input_tokens=token_in,
+            step_output_tokens=token_out,
+            tracker=tracker,
         )
 
     # -- Internal: thread setup ------------------------------------------
@@ -223,14 +252,16 @@ class PlanningRuntime:
         )
 
     def _render_recent_runs_brief(self, thread: Thread) -> str | None:
-        """One-line-per-run brief of the last 3 runs, or None if no runs exist yet."""
+        """One-line-per-run brief of the last few runs, or None if no runs exist yet."""
         writer = HistoryWriter(thread.runs_dir, thread.history_path)
         records = writer.load_records()
         if not records:
             return None
-        recent = records[-3:]
+        recent = records[-_PLANNER_RECENT_RUN_COUNT:]
         return "\n".join(
-            f"- Run {r.run_number}: {r.task[:80]} ({r.state})" for r in recent
+            f"- Run {r.run_number}: "
+            f"{_escape_cell(r.task[:_PLANNER_TASK_PREVIEW_CHARS])} ({r.state})"
+            for r in recent
         )
 
     # -- Internal: plan I/O ----------------------------------------------
@@ -403,7 +434,9 @@ class PlanningRuntime:
         step_outputs: list[str],
         aggregated_tools: list[str],
         aggregated_skills: list[str],
-        token_usage: dict[str, int],
+        step_input_tokens: int,
+        step_output_tokens: int,
+        tracker: TokenUsageTracker,
     ) -> RunResult:
         """Write a single aggregated RunRecord and update summary/key_facts."""
         # Derive top-level state from plan terminal status
@@ -471,12 +504,19 @@ class PlanningRuntime:
         # write a unified memory.json (PlanningRuntime's memory model is the
         # plan.json archive itself).
 
+        # Now that summary + key_facts have run, the tracker holds the
+        # complete planner + replan + summary + key_facts token usage.
+        final_token_usage = {
+            "input_tokens": step_input_tokens + tracker.input_tokens,
+            "output_tokens": step_output_tokens + tracker.output_tokens,
+        }
+
         return RunResult(
             output=aggregated_output,
             thread_id=thread.id,
             state=state,
             step_count=len(plan.steps),
-            token_usage=token_usage,
+            token_usage=final_token_usage,
             timing=None,
             summary=summary,
             skills_used=sorted(set(aggregated_skills)),
@@ -485,8 +525,12 @@ class PlanningRuntime:
     def _safe_summary(
         self, task: str, output: str, previous: str | None
     ) -> str | None:
+        # Use the tracked summary model so token usage is aggregated. If run()
+        # wasn't called (e.g., subclass calls _safe_summary directly), fall
+        # back to the unwrapped summary_model.
+        model = getattr(self, "_tracked_summary_model", None) or self.summary_model
         try:
-            return SummaryGenerator(self.planner_model).generate(
+            return SummaryGenerator(model).generate(
                 task=task, output=output, previous_summary=previous
             )
         except Exception:
@@ -500,8 +544,9 @@ class PlanningRuntime:
         previous: str | None,
         run_number: int,
     ) -> str | None:
+        model = getattr(self, "_tracked_summary_model", None) or self.summary_model
         try:
-            return KeyFactsDistiller(self.planner_model).distill(
+            return KeyFactsDistiller(model).distill(
                 task=task,
                 output=output,
                 run_number=run_number,

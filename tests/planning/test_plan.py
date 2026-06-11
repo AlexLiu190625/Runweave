@@ -110,6 +110,44 @@ def test_mark_failed_blocks_downstream() -> None:
     assert plan.steps[3].status == "pending"
 
 
+def test_mark_blocked_downstream_chain_3_levels() -> None:
+    """s1 → s2 → s3 chain: failing s1 must block both s2 and s3."""
+    plan = Plan.new(
+        task="t",
+        steps=[
+            _step("s1"),
+            _step("s2", depends_on=["s1"]),
+            _step("s3", depends_on=["s2"]),
+        ],
+    )
+    plan.mark_failed("s1", "boom")
+    plan.mark_blocked_downstream("s1")
+    assert plan.steps[1].status == "blocked"
+    assert plan.steps[2].status == "blocked"
+
+
+def test_mark_blocked_downstream_out_of_order() -> None:
+    """Cascade must succeed even when steps are declared in reverse-dependency
+    order — the previous single-pass implementation missed downstream blocking
+    in this case (fixpoint loop fixes it).
+    """
+    # Declaration order: s3 (depends on s2), s2 (depends on s1), s1
+    plan = Plan.new(
+        task="t",
+        steps=[
+            _step("s3", depends_on=["s2"]),
+            _step("s2", depends_on=["s1"]),
+            _step("s1"),
+        ],
+    )
+    plan.mark_failed("s1", "boom")
+    plan.mark_blocked_downstream("s1")
+    # All three downstream steps should be blocked despite the reversed order
+    by_id = {s.id: s for s in plan.steps}
+    assert by_id["s2"].status == "blocked"
+    assert by_id["s3"].status == "blocked"
+
+
 def test_is_terminal_when_all_done_or_failed_or_blocked() -> None:
     plan = Plan.new(
         task="t",

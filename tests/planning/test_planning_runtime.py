@@ -462,3 +462,182 @@ def test_orphan_plan_renamed_on_next_run(tmp_path, monkeypatch) -> None:
     assert len(orphans) == 1
     # Content preserved
     assert "stale" in orphans[0].read_text()
+
+
+# ---------------------------------------------------------------------------
+# Token usage aggregation (PR 4)
+# ---------------------------------------------------------------------------
+
+
+class _PlannerWithUsage:
+    """MockModel variant that returns a configurable token_usage on each call."""
+
+    model_id = "planner-with-usage"
+
+    def __init__(self, replies: list[str], usage_per_call: list[tuple[int, int]]) -> None:
+        self.replies = list(replies)
+        self.usage_per_call = list(usage_per_call)
+        self.calls: list[list] = []
+
+    def __call__(self, messages, **kwargs):
+        self.calls.append(messages)
+        content = self.replies.pop(0) if self.replies else ""
+        if self.usage_per_call:
+            input_t, output_t = self.usage_per_call.pop(0)
+            usage = SimpleNamespace(input_tokens=input_t, output_tokens=output_t)
+        else:
+            usage = None
+        return SimpleNamespace(content=content, token_usage=usage)
+
+
+def test_planner_token_usage_aggregated_into_runresult(tmp_path, monkeypatch) -> None:
+    """The planner's LLM call must contribute to RunResult.token_usage."""
+    planner_model = _PlannerWithUsage(
+        replies=[_plan_json({"step_id": "s1"})],
+        usage_per_call=[(200, 100)],
+    )
+    rt = PlanningRuntime(
+        planner_model=planner_model,
+        models=[_profile()],
+        base_dir=tmp_path,
+    )
+    # Step contributes some token usage too
+    step_result = _StepResult(
+        output="ok", state="success",
+        tools_used=[], skills_used=[],
+        token_usage={"input_tokens": 50, "output_tokens": 25},
+        elapsed_seconds=0.1,
+    )
+    monkeypatch.setattr(
+        PlanningRuntime, "_execute_step", lambda *a, **kw: step_result
+    )
+    monkeypatch.setattr(PlanningRuntime, "_safe_summary", lambda *a, **kw: None)
+    monkeypatch.setattr(PlanningRuntime, "_safe_key_facts", lambda *a, **kw: None)
+
+    result = rt.run("task")
+
+    # planner (200/100) + step (50/25) = 250/125
+    assert result.token_usage == {"input_tokens": 250, "output_tokens": 125}
+
+
+def test_summary_keyfacts_token_usage_aggregated(tmp_path, monkeypatch) -> None:
+    """Summary + key_facts LLM calls contribute to RunResult.token_usage."""
+    planner_model = _PlannerWithUsage(
+        replies=[
+            _plan_json({"step_id": "s1"}),  # plan
+            "narrative",                     # summary call
+            "- [run 1] fact",                # key_facts call
+        ],
+        usage_per_call=[
+            (100, 50),   # plan
+            (40, 20),    # summary
+            (30, 10),    # key_facts
+        ],
+    )
+    rt = PlanningRuntime(
+        planner_model=planner_model,
+        models=[_profile()],
+        base_dir=tmp_path,
+    )
+    step_result = _StepResult(
+        output="ok", state="success",
+        tools_used=[], skills_used=[],
+        token_usage={"input_tokens": 60, "output_tokens": 30},
+        elapsed_seconds=0.1,
+    )
+    monkeypatch.setattr(
+        PlanningRuntime, "_execute_step", lambda *a, **kw: step_result
+    )
+
+    result = rt.run("task")
+
+    # 100/50 (plan) + 40/20 (summary) + 30/10 (key_facts) + 60/30 (step)
+    assert result.token_usage == {"input_tokens": 230, "output_tokens": 110}
+
+
+def test_step_token_usage_not_double_counted(tmp_path, monkeypatch) -> None:
+    """Step models are NOT wrapped, so step usage comes from _StepResult only."""
+    planner_model = _PlannerWithUsage(
+        replies=[_plan_json({"step_id": "s1"})],
+        usage_per_call=[(0, 0)],  # planner used zero tokens
+    )
+    rt = PlanningRuntime(
+        planner_model=planner_model,
+        models=[_profile()],
+        base_dir=tmp_path,
+    )
+    step_result = _StepResult(
+        output="ok", state="success",
+        tools_used=[], skills_used=[],
+        token_usage={"input_tokens": 999, "output_tokens": 111},
+        elapsed_seconds=0.1,
+    )
+    monkeypatch.setattr(
+        PlanningRuntime, "_execute_step", lambda *a, **kw: step_result
+    )
+    monkeypatch.setattr(PlanningRuntime, "_safe_summary", lambda *a, **kw: None)
+    monkeypatch.setattr(PlanningRuntime, "_safe_key_facts", lambda *a, **kw: None)
+
+    result = rt.run("task")
+
+    # Only step result tokens (planner was 0; step model not wrapped)
+    assert result.token_usage == {"input_tokens": 999, "output_tokens": 111}
+
+
+# ---------------------------------------------------------------------------
+# summary_model configurability (PR 4)
+# ---------------------------------------------------------------------------
+
+
+def test_summary_model_defaults_to_planner_model(tmp_path) -> None:
+    """When summary_model is omitted, it falls back to planner_model."""
+    planner_model = MockModel([_plan_json({"step_id": "s1"})])
+    rt = PlanningRuntime(
+        planner_model=planner_model,
+        models=[_profile()],
+        base_dir=tmp_path,
+    )
+    assert rt.summary_model is planner_model
+
+
+def test_custom_summary_model_used(tmp_path, monkeypatch) -> None:
+    """A separately-configured summary_model is used for summary/key_facts."""
+    planner_model = MockModel([_plan_json({"step_id": "s1"})])
+    cheap_summary_model = MockModel([])
+    rt = PlanningRuntime(
+        planner_model=planner_model,
+        models=[_profile()],
+        summary_model=cheap_summary_model,
+        base_dir=tmp_path,
+    )
+    assert rt.summary_model is cheap_summary_model
+
+    monkeypatch.setattr(
+        PlanningRuntime, "_execute_step",
+        lambda *a, **kw: _ok_step_result(),
+    )
+
+    captured_models = []
+
+    def fake_summary(self, task, output, previous):
+        captured_models.append(
+            getattr(self, "_tracked_summary_model", None) or self.summary_model
+        )
+        return "summary"
+
+    def fake_key_facts(self, task, output, previous, run_number):
+        captured_models.append(
+            getattr(self, "_tracked_summary_model", None) or self.summary_model
+        )
+        return "- fact"
+
+    monkeypatch.setattr(PlanningRuntime, "_safe_summary", fake_summary)
+    monkeypatch.setattr(PlanningRuntime, "_safe_key_facts", fake_key_facts)
+
+    rt.run("task")
+
+    # Both summary & key_facts saw a TrackedModel wrapping the cheap model
+    assert len(captured_models) == 2
+    for m in captured_models:
+        # TrackedModel exposes the underlying model_id; cheap model's id
+        assert m.model_id == cheap_summary_model.model_id

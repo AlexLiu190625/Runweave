@@ -164,7 +164,7 @@ class PlannerLLM:
     # -- Parsing ----------------------------------------------------------
 
     def _parse_steps(self, raw: str) -> list[PlanStep]:
-        text = _strip_code_fence(raw).strip()
+        text = _extract_json(raw).strip()
         if not text:
             raise PlannerOutputError("empty output", raw)
         try:
@@ -235,9 +235,20 @@ class PlannerLLM:
 _FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*?)\n```$", re.DOTALL)
 
 
-def _strip_code_fence(text: str) -> str:
+def _extract_json(text: str) -> str:
+    """Extract a JSON object from possibly-noisy model output.
+
+    Strategy (first match wins):
+      1. Strict markdown code fence ``` or ```json wrapping the JSON
+      2. Substring from first '{' to last '}'
+      3. Raw stripped text (downstream JSON parser decides if it's valid)
+    """
     stripped = text.strip()
     m = _FENCE_RE.match(stripped)
     if m:
-        return m.group(1)
+        return m.group(1).strip()
+    first = stripped.find("{")
+    last = stripped.rfind("}")
+    if 0 <= first < last:
+        return stripped[first:last + 1]
     return stripped

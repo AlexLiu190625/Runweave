@@ -113,3 +113,27 @@ def test_replan_passes_previous_plan_and_failure_to_llm() -> None:
     user_msg = replan_model.calls[0][1].content
     assert "s1 failed: boom" in user_msg
     assert "Previous Plan" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# JSON extraction tolerance (PR 4)
+# ---------------------------------------------------------------------------
+
+
+def test_parses_json_with_leading_text() -> None:
+    """Mixed text before/after the JSON should still be tolerated."""
+    raw = "Sure! Here's the plan:\n" + _valid_plan_json(1) + "\nLet me know if you want changes."
+    model = MockModel([raw])
+    planner = PlannerLLM(model)
+    plan = planner.plan("task", ThreadContext())
+    assert len(plan.steps) == 1
+
+
+def test_parses_json_without_fence() -> None:
+    """A bare JSON object (no markdown fence) should parse on first try."""
+    model = MockModel([_valid_plan_json(2)])
+    planner = PlannerLLM(model)
+    plan = planner.plan("task", ThreadContext())
+    assert len(plan.steps) == 2
+    # Only one call was made (no retry needed)
+    assert len(model.calls) == 1

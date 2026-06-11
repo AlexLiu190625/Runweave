@@ -90,18 +90,30 @@ class Plan:
         s.completed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def mark_blocked_downstream(self, failed_step_id: str) -> None:
-        """Cascade: any pending step depending on a failed step becomes blocked."""
+        """Cascade: any pending step transitively depending on a failed/blocked
+        step becomes blocked. Iterates to a fixpoint so step declaration order
+        does not affect correctness.
+        """
         failed_or_blocked = {failed_step_id}
-        # Walk steps in order; downstream dependencies might chain.
-        for step in self.steps:
-            if step.status == "pending" and any(
-                d in failed_or_blocked for d in step.depends_on
-            ):
-                step.status = "blocked"
-                step.failure_reason = (
-                    f"upstream step failed/blocked: {','.join(step.depends_on)}"
-                )
-                failed_or_blocked.add(step.id)
+        # Seed with all currently failed/blocked steps so chains starting from
+        # earlier failures are still cascaded when re-entered.
+        for s in self.steps:
+            if s.status in {"failed", "blocked"}:
+                failed_or_blocked.add(s.id)
+
+        changed = True
+        while changed:
+            changed = False
+            for step in self.steps:
+                if step.status != "pending" or step.id in failed_or_blocked:
+                    continue
+                if any(d in failed_or_blocked for d in step.depends_on):
+                    step.status = "blocked"
+                    step.failure_reason = (
+                        f"upstream step failed/blocked: {','.join(step.depends_on)}"
+                    )
+                    failed_or_blocked.add(step.id)
+                    changed = True
 
     # -- Query ------------------------------------------------------------
 
