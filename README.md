@@ -450,6 +450,37 @@ Each `PlanningRuntime.run()` writes an active `plan.json` under the thread, arch
 
 Full example: [`examples/11_planning_runtime.py`](examples/11_planning_runtime.py).
 
+#### 可选参数 / Optional parameters
+
+```python
+PlanningRuntime(
+    planner_model=opus,                 # 出计划 + 默认跑 summary/key_facts
+    models=[...],
+    summary_model=haiku,                # 可选：用便宜模型跑 summary/key_facts 省钱
+    router=Router(),
+    step_timeout_seconds=600,           # 单 step 超时
+    max_step_iterations=30,             # step 执行总次数上限
+    max_replans=3,                      # 跨-step 重规划次数上限
+)
+```
+
+`summary_model` 默认 fallback 到 `planner_model`。设置成便宜模型可显著降本——典型场景里 summary + key_facts 占总 token 的 5-15%，用 Haiku 替代 Opus 可省 70%+ 这部分开销。
+
+`summary_model` defaults to `planner_model`. Pointing it at a cheaper model can meaningfully reduce cost — summary + key_facts typically account for 5-15% of total tokens, and using Haiku instead of Opus saves 70%+ on that slice.
+
+`RunResult.token_usage` 完整聚合了 5 类 LLM 调用：planner、replan、每个 step 的 CodeAgent、summary、key_facts。审计可信。
+
+`RunResult.token_usage` aggregates all five LLM call categories: planner, replan, per-step CodeAgent, summary, and key_facts. Fully auditable.
+
+#### 已知限制 / Known limitations (v0.3)
+
+- `expected_outputs` 只检查文件**存在**，不检查**修改**。如果上游 step 已经创建了该文件而当前 step 声称它作为产出但实际什么都没做，检查仍然通过。Workaround：planner 不要让多个 step 共用 `expected_outputs`。v0.4 会加 mtime 追踪。
+- `expected_outputs` checks file **existence** only, not **modification**. If an upstream step already created the file and the current step declared it as an output but did nothing, the check still passes. Workaround: planner should not duplicate `expected_outputs` across steps. v0.4 will add mtime tracking.
+- 当前所有 step 顺序执行，即使彼此无依赖。并发执行 defer 到 v0.4。
+- All steps currently execute sequentially even when independent. Parallel execution is deferred to v0.4.
+- 没有 `PlanningRuntime.run_stream()`。多 step 流式语义 defer 到 v0.4。
+- No `PlanningRuntime.run_stream()` yet. Multi-step streaming semantics are deferred to v0.4.
+
 ## 依赖 / Dependencies
 
 运行时依赖只有一个：`smolagents[openai]==1.24.0`。开发依赖：`pytest`、`python-dotenv`。
